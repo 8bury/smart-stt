@@ -423,6 +423,14 @@ ipcMain.handle(
   },
 );
 
+ipcMain.handle('hotkeys:disable', () => {
+  unregisterShortcuts();
+});
+
+ipcMain.handle('hotkeys:enable', () => {
+  registerShortcuts();
+});
+
 ipcMain.handle('process-audio', async (_event, arrayBuffer: ArrayBuffer) => {
   const buffer = Buffer.from(arrayBuffer);
   try {

@@ -29,6 +29,8 @@ const overlayAPI = {
 const settingsAPI = {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (payload: SettingsPayload) => ipcRenderer.invoke('settings:save', payload),
+  disableHotkeys: () => ipcRenderer.invoke('hotkeys:disable'),
+  enableHotkeys: () => ipcRenderer.invoke('hotkeys:enable'),
 };
 
 contextBridge.exposeInMainWorld('overlayAPI', overlayAPI);

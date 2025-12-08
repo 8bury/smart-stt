@@ -15,6 +15,8 @@ const tabPanels = document.querySelectorAll<HTMLElement>('[data-tab-panel]');
 const recordHotkeyInput = document.querySelector('#recordHotkey') as HTMLInputElement;
 const settingsHotkeyInput = document.querySelector('#settingsHotkey') as HTMLInputElement;
 
+let hotkeyInputFocusCount = 0;
+
 const DEFAULT_HOTKEYS = {
   record: 'Ctrl+Shift+S',
   settings: 'Ctrl+Shift+O',
@@ -104,6 +106,30 @@ function formatHotkey(event: KeyboardEvent) {
 }
 
 function bindHotkeyInput(input: HTMLInputElement) {
+  input.addEventListener('focus', async () => {
+    hotkeyInputFocusCount += 1;
+    if (hotkeyInputFocusCount === 1) {
+      try {
+        await window.settingsAPI.disableHotkeys();
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('[hotkeys] falha ao desativar atalhos globais', err);
+      }
+    }
+  });
+
+  input.addEventListener('blur', async () => {
+    hotkeyInputFocusCount = Math.max(0, hotkeyInputFocusCount - 1);
+    if (hotkeyInputFocusCount === 0) {
+      try {
+        await window.settingsAPI.enableHotkeys();
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('[hotkeys] falha ao reativar atalhos globais', err);
+      }
+    }
+  });
+
   input.addEventListener('keydown', (event) => {
     if (event.key === 'Tab') {
       return;
@@ -229,6 +255,15 @@ recordHotkeyInput.value = DEFAULT_HOTKEYS.record;
 settingsHotkeyInput.value = DEFAULT_HOTKEYS.settings;
 bindHotkeyInput(recordHotkeyInput);
 bindHotkeyInput(settingsHotkeyInput);
+
+window.addEventListener('beforeunload', async () => {
+  try {
+    await window.settingsAPI.enableHotkeys();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[hotkeys] falha ao reativar atalhos globais ao fechar', err);
+  }
+});
 
 async function init() {
   setFormState('loading');
