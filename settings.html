@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Configurações</title>
+  </head>
+  <body class="settings">
+    <div class="settings-card">
+      <header class="card-header">
+        <div class="card-title">
+          <h1>Configurações</h1>
+          <p class="lede">Defina sua chave, microfone e atalhos rápidos.</p>
+        </div>
+        <button type="button" id="close-btn" aria-label="Fechar">×</button>
+      </header>
+
+      <form novalidate>
+        <div class="tab-switch" role="tablist" aria-label="Categorias">
+          <button
+            type="button"
+            id="tab-app-btn"
+            role="tab"
+            aria-controls="tab-app"
+            aria-selected="true"
+            data-tab-button="app"
+            data-active="true"
+          >
+            App
+          </button>
+          <button
+            type="button"
+            id="tab-hotkeys-btn"
+            role="tab"
+            aria-controls="tab-hotkeys"
+            aria-selected="false"
+            data-tab-button="hotkeys"
+          >
+            Hotkeys
+          </button>
+        </div>
+
+        <div class="tab-panels">
+          <section
+            class="tab-panel"
+            id="tab-app"
+            role="tabpanel"
+            aria-labelledby="tab-app-btn"
+            data-tab-panel="app"
+            data-active="true"
+            tabindex="0"
+          >
+            <div class="field">
+              <div class="field-head">
+                <label for="apiKey">Chave OpenAI</label>
+                <span class="chip">Obrigatório</span>
+              </div>
+              <p class="field-hint">
+                Usada para transcrever com a OpenAI. Cole sua chave começando com sk-.
+              </p>
+              <input
+                id="apiKey"
+                name="apiKey"
+                type="password"
+                autocomplete="off"
+                placeholder="sk-..."
+                required
+              />
+            </div>
+
+            <div class="field">
+              <label for="micSelect">Microfone</label>
+              <p class="field-hint">Escolha o dispositivo padrão para gravar.</p>
+              <div class="mic-row">
+                <select id="micSelect" name="micSelect"></select>
+                <button id="refresh" type="button" class="ghost">Atualizar</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="languageSelect">Idioma</label>
+              <p class="field-hint">Define o idioma da interface e saída.</p>
+              <select id="languageSelect" name="languageSelect">
+                <option value="pt">Português</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+          </section>
+
+          <section
+            class="tab-panel"
+            id="tab-hotkeys"
+            role="tabpanel"
+            aria-labelledby="tab-hotkeys-btn"
+            data-tab-panel="hotkeys"
+            tabindex="0"
+          >
+            <p class="tab-helper">
+              Escolha os atalhos para gravar e abrir as configurações.
+            </p>
+
+            <div class="field">
+              <label for="recordHotkey">Atalho para gravar</label>
+              <p class="field-hint">Clique no campo e pressione o atalho desejado.</p>
+              <input
+                id="recordHotkey"
+                name="recordHotkey"
+                type="text"
+                inputmode="none"
+                autocomplete="off"
+                placeholder="Ex: Ctrl+Shift+S"
+              />
+            </div>
+
+            <div class="field">
+              <label for="settingsHotkey">Atalho para abrir configurações</label>
+              <p class="field-hint">Use combinações únicas para evitar conflitos.</p>
+              <input
+                id="settingsHotkey"
+                name="settingsHotkey"
+                type="text"
+                inputmode="none"
+                autocomplete="off"
+                placeholder="Ex: Ctrl+Shift+O"
+              />
+            </div>
+          </section>
+        </div>
+
+        <div class="form-footer">
+          <span id="status" role="status" aria-live="polite" data-kind="info">Pronto</span>
+          <div class="actions">
+            <button type="submit" id="save-btn">Salvar</button>
+          </div>
+        </div>
+      </form>
+    </div>
+    <script type="module" src="/src/settings.ts"></script>
+  </body>
+</html>
+
