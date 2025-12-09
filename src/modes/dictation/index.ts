@@ -1,0 +1,1 @@
+export { handleDictationAudio } from './handler';
