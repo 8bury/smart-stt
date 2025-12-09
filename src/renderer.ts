@@ -25,6 +25,7 @@ const DEFAULT_CANCEL_HOTKEY = 'Ctrl+Shift+Q';
 let settingsCache: OverlaySettings | null = null;
 
 const WAVE_BAR_COUNT = 10;
+const WAVEFORM_GAIN = 2;
 let waveformBars: HTMLSpanElement[] = [];
 let audioContext: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
@@ -125,8 +126,11 @@ function animateWaveform(timestamp: number) {
         if (sample > peak) peak = sample;
       }
 
-      const normalized = Math.min(1, peak / 36);
-      const height = 42 + normalized * 36;
+      const boosted = peak * WAVEFORM_GAIN;
+      const normalized = Math.min(1, boosted / 36);
+      const baseHeight = 2; // lower floor so quiet input drops further
+      const dynamicRange = 44; // keep headroom near the top
+      const height = baseHeight + normalized * dynamicRange;
       waveformBars[i].style.height = `${height}%`;
     }
   } else if (waveformMode === 'processing') {

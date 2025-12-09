@@ -56,7 +56,7 @@ body {
   display: flex;
   align-items: center;
   gap: 3px;
-  height: 16px;
+  height: 32px;
   padding: 0 2px;
   opacity: 0.94;
 }
@@ -68,6 +68,7 @@ body {
   background: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.86) 0%,
+    
     var(--accent-color) 100%
   );
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
