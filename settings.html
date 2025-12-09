@@ -7,10 +7,7 @@
   <body class="settings">
     <div class="settings-card">
       <header class="card-header">
-        <div class="card-title">
-          <h1>Configurações</h1>
-          <p class="lede">Defina sua chave, microfone e atalhos rápidos.</p>
-        </div>
+        <h1>Configurações</h1>
         <button type="button" id="close-btn" aria-label="Fechar">×</button>
       </header>
 
@@ -50,13 +47,7 @@
             tabindex="0"
           >
             <div class="field">
-              <div class="field-head">
-                <label for="apiKey">Chave OpenAI</label>
-                <span class="chip">Obrigatório</span>
-              </div>
-              <p class="field-hint">
-                Usada para transcrever com a OpenAI. Cole sua chave começando com sk-.
-              </p>
+              <label for="apiKey">Chave OpenAI</label>
               <input
                 id="apiKey"
                 name="apiKey"
@@ -69,16 +60,14 @@
 
             <div class="field">
               <label for="micSelect">Microfone</label>
-              <p class="field-hint">Escolha o dispositivo padrão para gravar.</p>
               <div class="mic-row">
                 <select id="micSelect" name="micSelect"></select>
-                <button id="refresh" type="button" class="ghost">Atualizar</button>
+                <button id="refresh" type="button" class="ghost">↻</button>
               </div>
             </div>
 
             <div class="field">
               <label for="languageSelect">Idioma</label>
-              <p class="field-hint">Define o idioma da interface e saída.</p>
               <select id="languageSelect" name="languageSelect">
                 <option value="pt">Português</option>
                 <option value="en">English</option>
@@ -94,63 +83,51 @@
             data-tab-panel="hotkeys"
             tabindex="0"
           >
-            <p class="tab-helper">
-            Escolha os atalhos para gravar, editar e abrir as configurações.
-            </p>
-
             <div class="field">
-              <label for="recordHotkey">Atalho para gravar</label>
-              <p class="field-hint">Clique no campo e pressione o atalho desejado.</p>
+              <label for="recordHotkey">Gravar</label>
               <input
                 id="recordHotkey"
                 name="recordHotkey"
                 type="text"
                 inputmode="none"
                 autocomplete="off"
-                placeholder="Ex: Ctrl+Shift+S"
+                placeholder="Ctrl+Shift+S"
               />
             </div>
 
-          <div class="field">
-            <label for="cancelHotkey">Atalho para cancelar</label>
-            <p class="field-hint">
-              Interrompe imediatamente a gravação ou edição sem processar o áudio.
-            </p>
-            <input
-              id="cancelHotkey"
-              name="cancelHotkey"
-              type="text"
-              inputmode="none"
-              autocomplete="off"
-              placeholder="Ex: Ctrl+Shift+Q"
-            />
-          </div>
-
-          <div class="field">
-            <label for="editHotkey">Atalho para editar texto</label>
-            <p class="field-hint">
-              Aciona o modo edição (usa o texto selecionado e sua instrução por voz).
-            </p>
-            <input
-              id="editHotkey"
-              name="editHotkey"
-              type="text"
-              inputmode="none"
-              autocomplete="off"
-              placeholder="Ex: Ctrl+Shift+E"
-            />
-          </div>
+            <div class="field">
+              <label for="editHotkey">Editar</label>
+              <input
+                id="editHotkey"
+                name="editHotkey"
+                type="text"
+                inputmode="none"
+                autocomplete="off"
+                placeholder="Ctrl+Shift+E"
+              />
+            </div>
 
             <div class="field">
-              <label for="settingsHotkey">Atalho para abrir configurações</label>
-              <p class="field-hint">Use combinações únicas para evitar conflitos.</p>
+              <label for="cancelHotkey">Cancelar</label>
+              <input
+                id="cancelHotkey"
+                name="cancelHotkey"
+                type="text"
+                inputmode="none"
+                autocomplete="off"
+                placeholder="Ctrl+Shift+Q"
+              />
+            </div>
+
+            <div class="field">
+              <label for="settingsHotkey">Configurações</label>
               <input
                 id="settingsHotkey"
                 name="settingsHotkey"
                 type="text"
                 inputmode="none"
                 autocomplete="off"
-                placeholder="Ex: Ctrl+Shift+O"
+                placeholder="Ctrl+Shift+O"
               />
             </div>
           </section>

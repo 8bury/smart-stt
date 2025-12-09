@@ -24,7 +24,7 @@ const DEFAULT_EDIT_HOTKEY = 'Ctrl+Shift+E';
 const DEFAULT_CANCEL_HOTKEY = 'Ctrl+Shift+Q';
 let settingsCache: OverlaySettings | null = null;
 
-const WAVE_BAR_COUNT = 10;
+const WAVE_BAR_COUNT = 12;
 const WAVEFORM_GAIN = 2;
 const waveformBars: HTMLSpanElement[] = [];
 let audioContext: AudioContext | null = null;
@@ -74,8 +74,11 @@ function ensureWaveformBars() {
 function renderIdleWaveform() {
   ensureWaveformBars();
   waveformBars.forEach((bar, index) => {
-    const base = 40 + (index % 2) * 4;
+    // Minimal, subtle pattern for idle state
+    const variation = (index % 3) * 5;
+    const base = 30 + variation;
     bar.style.height = `${base}%`;
+    bar.style.opacity = '0.4';
   });
 }
 
@@ -128,18 +131,23 @@ function animateWaveform(timestamp: number) {
 
       const boosted = peak * WAVEFORM_GAIN;
       const normalized = Math.min(1, boosted / 36);
-      const baseHeight = 2; // lower floor so quiet input drops further
-      const dynamicRange = 44; // keep headroom near the top
+
+      const baseHeight = 10;
+      const dynamicRange = 60;
       const height = baseHeight + normalized * dynamicRange;
-      waveformBars[i].style.height = `${height}%`;
+
+      waveformBars[i].style.height = `${Math.max(10, height)}%`;
+      waveformBars[i].style.opacity = `${0.5 + normalized * 0.5}`;
     }
   } else if (waveformMode === 'processing') {
     const t = timestamp / 1000;
     for (let i = 0; i < waveformBars.length; i += 1) {
-      const wave = Math.sin(t * 2.9 + i * 0.34) * 3.6;
-      const drift = Math.sin(t * 1.6 + i * 0.2) * 2.8;
-      const height = 44 + wave + drift;
-      waveformBars[i].style.height = `${Math.max(30, Math.min(72, height))}%`;
+      // Simple, clean wave motion
+      const wave = Math.sin(t * 3 + i * 0.5) * 15;
+      const height = 40 + wave;
+
+      waveformBars[i].style.height = `${Math.max(20, Math.min(70, height))}%`;
+      waveformBars[i].style.opacity = '0.6';
     }
   }
 
