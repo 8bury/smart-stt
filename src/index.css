@@ -16,71 +16,73 @@ body {
   left: 50%;
   bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
-  width: min(92vw, 460px);
+  width: auto;
   background: rgba(15, 23, 42, 0.72);
   border: 1px solid rgba(148, 163, 184, 0.25);
   border-radius: 14px;
   backdrop-filter: blur(14px);
-  padding: 14px 16px;
+  padding: 8px 10px;
   box-shadow:
     0 10px 40px rgba(0, 0, 0, 0.35),
     0 1px 0 rgba(255, 255, 255, 0.04);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  --accent-color: #22c55e;
+  --accent-shadow: rgba(34, 197, 94, 0.35);
 }
 
-.overlay .left {
+.overlay[data-state='recording'] {
+  --accent-color: #ef4444;
+  --accent-shadow: rgba(239, 68, 68, 0.4);
+}
+
+.overlay[data-state='processing'] {
+  --accent-color: #f59e0b;
+  --accent-shadow: rgba(245, 158, 11, 0.4);
+}
+
+.overlay[data-state='idle'] {
+  --accent-color: #22c55e;
+  --accent-shadow: rgba(34, 197, 94, 0.35);
+}
+
+.overlay[data-state='error'] {
+  --accent-color: #f87171;
+  --accent-shadow: rgba(248, 113, 113, 0.35);
+}
+
+.waveform {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 3px;
+  height: 16px;
+  padding: 0 2px;
+  opacity: 0.94;
 }
 
-.overlay .dot {
-  width: 14px;
-  height: 14px;
+.waveform .bar {
+  width: 3px;
+  height: 32%;
   border-radius: 999px;
-  background: #ef4444;
-  box-shadow: 0 0 0 rgba(239, 68, 68, 0.4);
-  animation: pulse 1.5s infinite;
-}
-
-.overlay[data-state='idle'] .dot {
-  background: #22c55e;
-  box-shadow: none;
-  animation: none;
-}
-
-.overlay[data-state='processing'] .dot {
-  background: #f59e0b;
-  animation: pulse 1s infinite;
-}
-
-.overlay[data-state='error'] .dot {
-  background: #f87171;
-  animation: none;
-}
-
-.overlay .text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.overlay #status {
-  font-weight: 600;
-}
-
-.overlay .hint {
-  font-size: 12px;
-  color: #cbd5e1;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.86) 0%,
+    var(--accent-color) 100%
+  );
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+  transition: height 0.12s ease, transform 0.12s ease;
+  transform-origin: center;
 }
 
 @keyframes pulse {
   0% {
     transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+    box-shadow: 0 0 0 0 var(--accent-shadow);
   }
   70% {
     transform: scale(1);
-    box-shadow: 0 0 0 12px rgba(239, 68, 68, 0);
+    box-shadow: 0 0 0 12px rgba(0, 0, 0, 0);
   }
   100% {
     transform: scale(0.95);
@@ -261,6 +263,7 @@ select {
   padding: 11px 12px;
   border-radius: 12px;
   width: 100%;
+  box-sizing: border-box;
   transition:
     border-color 0.2s ease,
     box-shadow 0.2s ease,

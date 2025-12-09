@@ -274,7 +274,7 @@ async function captureSelectedOrClipboardText() {
 
   try {
     await simulateCopy();
-    await delay(120);
+    await delay(180);
     selection = clipboard.readText().trim();
   } catch (err) {
     logError('captureSelectedOrClipboardText:copy', err);
@@ -286,12 +286,8 @@ async function captureSelectedOrClipboardText() {
     }
   }
 
-  const text = selection || previousClipboard.trim();
-  const source = selection
-    ? ('selection' as const)
-    : previousClipboard.trim()
-      ? ('clipboard' as const)
-      : ('empty' as const);
+  const text = selection;
+  const source = selection ? ('selection' as const) : ('empty' as const);
 
   return { text, source };
 }
@@ -504,7 +500,18 @@ async function applyInstructionToText(instruction: string, baseText: string) {
 }
 
 async function handleEditAudio(buffer: Buffer) {
-  const baseText = pendingEditText;
+  let baseText = pendingEditText;
+  if (!baseText) {
+    try {
+      const { text } = await captureSelectedOrClipboardText();
+      if (text?.trim()) {
+        baseText = text;
+        pendingEditText = text;
+      }
+    } catch (err) {
+      logError('handleEditAudio:capture-fallback', err);
+    }
+  }
   if (!baseText) {
     throw new Error('Nenhum texto disponível para editar. Selecione ou copie e tente novamente.');
   }

@@ -3,9 +3,10 @@ import './index.css';
 type UiState = 'loading' | 'idle' | 'recording' | 'processing' | 'error';
 type RecordingMode = 'dictation' | 'edit';
 
-const statusEl = document.querySelector('#status') as HTMLSpanElement;
-const hintEl = document.querySelector('#hint') as HTMLDivElement;
+const statusEl = document.querySelector('#status') as HTMLSpanElement | null;
+const hintEl = document.querySelector('#hint') as HTMLDivElement | null;
 const overlayEl = document.querySelector('#overlay') as HTMLDivElement;
+const waveformEl = document.querySelector('#waveform') as HTMLDivElement | null;
 
 type OverlaySettings = {
   apiKey?: string;
@@ -23,6 +24,15 @@ const DEFAULT_EDIT_HOTKEY = 'Ctrl+Shift+E';
 const DEFAULT_CANCEL_HOTKEY = 'Ctrl+Shift+Q';
 let settingsCache: OverlaySettings | null = null;
 
+const WAVE_BAR_COUNT = 10;
+let waveformBars: HTMLSpanElement[] = [];
+let audioContext: AudioContext | null = null;
+let analyser: AnalyserNode | null = null;
+let waveformSource: MediaStreamAudioSourceNode | null = null;
+let waveformData: Uint8Array<ArrayBuffer> | null = null;
+let waveformRaf: number | null = null;
+let waveformMode: 'idle' | 'live' | 'processing' = 'idle';
+
 let mediaRecorder: MediaRecorder | null = null;
 let chunks: BlobPart[] = [];
 let stream: MediaStream | null = null;
@@ -33,15 +43,125 @@ async function refreshSettings() {
   try {
     const data = await window.overlayAPI.getSettings();
     settingsCache = data;
-    const recordHotkey = data.hotkeys?.record || DEFAULT_RECORD_HOTKEY;
-    const editHotkey = data.hotkeys?.edit || DEFAULT_EDIT_HOTKEY;
-    const cancelHotkey = data.hotkeys?.cancel || DEFAULT_CANCEL_HOTKEY;
-    hintEl.textContent = `Use ${recordHotkey} para ditar, ${editHotkey} para editar ou ${cancelHotkey} para cancelar`;
+    if (hintEl) {
+      const recordHotkey = data.hotkeys?.record || DEFAULT_RECORD_HOTKEY;
+      const editHotkey = data.hotkeys?.edit || DEFAULT_EDIT_HOTKEY;
+      const cancelHotkey = data.hotkeys?.cancel || DEFAULT_CANCEL_HOTKEY;
+      hintEl.textContent = `Use ${recordHotkey} para ditar, ${editHotkey} para editar ou ${cancelHotkey} para cancelar`;
+    }
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('[refreshSettings] failed', err);
-    hintEl.textContent = `Use ${DEFAULT_RECORD_HOTKEY} para ditar, ${DEFAULT_EDIT_HOTKEY} para editar ou ${DEFAULT_CANCEL_HOTKEY} para cancelar`;
+    if (hintEl) {
+      hintEl.textContent = `Use ${DEFAULT_RECORD_HOTKEY} para ditar, ${DEFAULT_EDIT_HOTKEY} para editar ou ${DEFAULT_CANCEL_HOTKEY} para cancelar`;
+    }
   }
+}
+
+function ensureWaveformBars() {
+  if (!waveformEl || waveformBars.length) return;
+  const fragment = document.createDocumentFragment();
+  for (let i = 0; i < WAVE_BAR_COUNT; i += 1) {
+    const bar = document.createElement('span');
+    bar.className = 'bar';
+    fragment.appendChild(bar);
+    waveformBars.push(bar);
+  }
+  waveformEl.appendChild(fragment);
+}
+
+function renderIdleWaveform() {
+  ensureWaveformBars();
+  waveformBars.forEach((bar, index) => {
+    const base = 40 + (index % 2) * 4;
+    bar.style.height = `${base}%`;
+  });
+}
+
+function detachWaveformSource() {
+  waveformSource?.disconnect();
+  waveformSource = null;
+  analyser = null;
+  waveformData = null;
+}
+
+function setWaveformMode(mode: 'idle' | 'live' | 'processing') {
+  waveformMode = mode;
+  if (!waveformEl) {
+    if (waveformRaf) {
+      cancelAnimationFrame(waveformRaf);
+      waveformRaf = null;
+    }
+    return;
+  }
+
+  ensureWaveformBars();
+  if (waveformBars.length === 0) return;
+
+  if (mode === 'idle') {
+    if (waveformRaf) {
+      cancelAnimationFrame(waveformRaf);
+      waveformRaf = null;
+    }
+    renderIdleWaveform();
+    return;
+  }
+
+  if (!waveformRaf) {
+    waveformRaf = requestAnimationFrame(animateWaveform);
+  }
+}
+
+function animateWaveform(timestamp: number) {
+  if (waveformMode === 'live' && analyser && waveformData) {
+    analyser.getByteTimeDomainData(waveformData);
+    const slice = Math.max(1, Math.floor(waveformData.length / WAVE_BAR_COUNT));
+
+    for (let i = 0; i < waveformBars.length; i += 1) {
+      const start = i * slice;
+      let peak = 0;
+      for (let j = start; j < start + slice && j < waveformData.length; j += 1) {
+        const sample = Math.abs(waveformData[j] - 128);
+        if (sample > peak) peak = sample;
+      }
+
+      const normalized = Math.min(1, peak / 36);
+      const height = 42 + normalized * 36;
+      waveformBars[i].style.height = `${height}%`;
+    }
+  } else if (waveformMode === 'processing') {
+    const t = timestamp / 1000;
+    for (let i = 0; i < waveformBars.length; i += 1) {
+      const wave = Math.sin(t * 2.9 + i * 0.34) * 3.6;
+      const drift = Math.sin(t * 1.6 + i * 0.2) * 2.8;
+      const height = 44 + wave + drift;
+      waveformBars[i].style.height = `${Math.max(30, Math.min(72, height))}%`;
+    }
+  }
+
+  waveformRaf = requestAnimationFrame(animateWaveform);
+}
+
+async function attachWaveformToStream(currentStream: MediaStream) {
+  if (!waveformEl) return;
+
+  ensureWaveformBars();
+  if (!audioContext) {
+    audioContext = new AudioContext();
+  } else if (audioContext.state === 'suspended') {
+    await audioContext.resume();
+  }
+
+  detachWaveformSource();
+  analyser = audioContext.createAnalyser();
+  analyser.fftSize = 256;
+  analyser.smoothingTimeConstant = 0.82;
+  const backing = new ArrayBuffer(analyser.frequencyBinCount);
+  waveformData = new Uint8Array(backing);
+  waveformSource = audioContext.createMediaStreamSource(currentStream);
+  waveformSource.connect(analyser);
+
+  setWaveformMode('live');
 }
 
 function setState(state: UiState, message?: string) {
@@ -55,6 +175,12 @@ function setState(state: UiState, message?: string) {
       error: lastError || 'Erro',
     }[state];
   }
+
+  if (state === 'processing') {
+    setWaveformMode('processing');
+  } else if (state === 'idle' || state === 'loading' || state === 'error') {
+    setWaveformMode('idle');
+  }
 }
 
 function resetStream() {
@@ -64,6 +190,7 @@ function resetStream() {
     stream = null;
   }
   chunks = [];
+  detachWaveformSource();
 }
 
 async function startRecording(mode: RecordingMode) {
@@ -80,6 +207,7 @@ async function startRecording(mode: RecordingMode) {
       : { audio: true };
 
     stream = await navigator.mediaDevices.getUserMedia(constraints);
+    await attachWaveformToStream(stream);
     const preferredMime = 'audio/webm;codecs=opus';
     const mimeType = MediaRecorder.isTypeSupported(preferredMime)
       ? preferredMime
@@ -152,7 +280,9 @@ async function stopRecording() {
 }
 
 setState('idle');
-hintEl.textContent = `Use ${DEFAULT_RECORD_HOTKEY} para ditar, ${DEFAULT_EDIT_HOTKEY} para editar ou ${DEFAULT_CANCEL_HOTKEY} para cancelar`;
+if (hintEl) {
+  hintEl.textContent = `Use ${DEFAULT_RECORD_HOTKEY} para ditar, ${DEFAULT_EDIT_HOTKEY} para editar ou ${DEFAULT_CANCEL_HOTKEY} para cancelar`;
+}
 void refreshSettings();
 
 window.overlayAPI.onRecordingToggle(({ recording, mode }) => {
