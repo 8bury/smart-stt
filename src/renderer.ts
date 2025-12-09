@@ -26,7 +26,7 @@ let settingsCache: OverlaySettings | null = null;
 
 const WAVE_BAR_COUNT = 10;
 const WAVEFORM_GAIN = 2;
-let waveformBars: HTMLSpanElement[] = [];
+const waveformBars: HTMLSpanElement[] = [];
 let audioContext: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
 let waveformSource: MediaStreamAudioSourceNode | null = null;

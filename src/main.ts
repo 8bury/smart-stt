@@ -1,7 +1,6 @@
 import {
   app,
   BrowserWindow,
-  clipboard,
   globalShortcut,
   ipcMain,
   screen,
