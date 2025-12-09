@@ -10,11 +10,11 @@ import {
   nativeImage,
 } from 'electron';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import started from 'electron-squirrel-startup';
 import Store from 'electron-store';
 import { APIError, OpenAI } from 'openai';
 import { toFile } from 'openai/uploads';
+import { getClipboardOperations } from './clipboard';
 
 type HotkeySettings = {
   record?: string;
@@ -63,6 +63,7 @@ let recordingMode: RecordingMode = 'dictation';
 let pendingEditText: string | null = null;
 let cancelInProgress = false;
 let tray: Tray | null = null;
+const clipboardOps = getClipboardOperations();
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -246,20 +247,7 @@ function toggleSettingsWindow() {
 }
 
 async function simulateCopy(): Promise<void> {
-  const psCommand =
-    "$wshell = New-Object -ComObject wscript.shell; Start-Sleep -Milliseconds 80; $wshell.SendKeys('^c')";
-
-  return new Promise((resolve, reject) => {
-    const child = spawn('powershell', ['-NoProfile', '-Command', psCommand]);
-    child.once('error', (err) => reject(err));
-    child.once('exit', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`SendKeys saiu com código ${code}`));
-      }
-    });
-  });
+  return clipboardOps.simulateCopy();
 }
 
 async function captureSelectedOrClipboardText() {
@@ -437,21 +425,7 @@ async function cleanText(text: string) {
 }
 
 function simulatePaste(): Promise<void> {
-  // Usa PowerShell para disparar Ctrl+V sem dependência nativa.
-  const psCommand =
-    "$wshell = New-Object -ComObject wscript.shell; Start-Sleep -Milliseconds 80; $wshell.SendKeys('^v')";
-
-  return new Promise((resolve, reject) => {
-    const child = spawn('powershell', ['-NoProfile', '-Command', psCommand]);
-    child.once('error', (err) => reject(err));
-    child.once('exit', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`SendKeys saiu com código ${code}`));
-      }
-    });
-  });
+  return clipboardOps.simulatePaste();
 }
 
 async function handleAudio(buffer: Buffer) {
