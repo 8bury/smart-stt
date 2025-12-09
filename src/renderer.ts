@@ -27,6 +27,7 @@ let settingsCache: OverlaySettings | null = null;
 const WAVE_BAR_COUNT = 12;
 const WAVEFORM_GAIN = 2;
 const waveformBars: HTMLSpanElement[] = [];
+const TARGET_AUDIO_BITRATE = 64_000;
 let audioContext: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
 let waveformSource: MediaStreamAudioSourceNode | null = null;
@@ -227,7 +228,10 @@ async function startRecording(mode: RecordingMode) {
     // eslint-disable-next-line no-console
     console.log('[startRecording] mimeType=', mimeType);
 
-    mediaRecorder = new MediaRecorder(stream, { mimeType });
+    mediaRecorder = new MediaRecorder(stream, {
+      mimeType,
+      audioBitsPerSecond: TARGET_AUDIO_BITRATE,
+    });
     chunks = [];
 
     mediaRecorder.ondataavailable = (event) => {
@@ -257,6 +261,17 @@ async function startRecording(mode: RecordingMode) {
         mode === 'edit'
           ? await window.overlayAPI.processEdit(buffer)
           : await window.overlayAPI.processAudio(buffer);
+
+      // Check if processing was cancelled
+      if (result && 'cancelled' in result && result.cancelled) {
+        setState('idle', mode === 'edit' ? 'Edição cancelada' : 'Processamento cancelado');
+        setTimeout(() => {
+          setState('idle');
+          void window.overlayAPI.hideOverlay();
+        }, 800);
+        return;
+      }
+
       if (!result?.ok) {
         lastError = result?.error || 'Falha ao processar áudio';
         // eslint-disable-next-line no-console

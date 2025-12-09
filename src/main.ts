@@ -57,6 +57,7 @@ const store = new Store<AppSettings>({
 let overlayWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
 let isRecording = false;
+let isProcessing = false;
 let recordingMode: RecordingMode = 'dictation';
 let pendingEditText: string | null = null;
 let cancelInProgress = false;
@@ -265,9 +266,10 @@ async function startEditMode() {
 }
 
 function cancelRecording() {
-  if (!isRecording) return;
+  if (!isRecording && !isProcessing) return;
   cancelInProgress = true;
   isRecording = false;
+  isProcessing = false;
   pendingEditText = null;
   overlayWindow?.webContents.send('recording-cancel', { mode: recordingMode });
   setTimeout(() => {
@@ -398,15 +400,26 @@ ipcMain.handle('hotkeys:enable', () => {
 
 ipcMain.handle('process-audio', async (_event, arrayBuffer: ArrayBuffer) => {
   const buffer = Buffer.from(arrayBuffer);
+  isProcessing = true;
   try {
     const apiKey = store.get('apiKey');
     if (!apiKey) {
       throw new Error('Configure a chave da OpenAI nas configurações.');
     }
+    if (cancelInProgress) {
+      isProcessing = false;
+      return { ok: false, error: 'Cancelado', cancelled: true };
+    }
     const language = store.get('language') ?? 'pt';
     const text = await handleDictationAudio(buffer, clipboardOps, apiKey, language);
+    if (cancelInProgress) {
+      isProcessing = false;
+      return { ok: false, error: 'Cancelado', cancelled: true };
+    }
+    isProcessing = false;
     return { ok: true, text };
   } catch (error) {
+    isProcessing = false;
     logError('process-audio', error);
     let message = error instanceof Error ? error.message : 'Erro desconhecido';
     if (error instanceof APIError) {
@@ -423,10 +436,16 @@ ipcMain.handle('process-audio', async (_event, arrayBuffer: ArrayBuffer) => {
 
 ipcMain.handle('process-edit', async (_event, arrayBuffer: ArrayBuffer) => {
   const buffer = Buffer.from(arrayBuffer);
+  isProcessing = true;
   try {
     const apiKey = store.get('apiKey');
     if (!apiKey) {
       throw new Error('Configure a chave da OpenAI nas configurações.');
+    }
+    if (cancelInProgress) {
+      isProcessing = false;
+      pendingEditText = null;
+      return { ok: false, error: 'Cancelado', cancelled: true };
     }
     const language = store.get('language') ?? 'pt';
     const text = await handleEditAudio(
@@ -436,9 +455,16 @@ ipcMain.handle('process-edit', async (_event, arrayBuffer: ArrayBuffer) => {
       language,
       pendingEditText,
     );
+    if (cancelInProgress) {
+      isProcessing = false;
+      pendingEditText = null;
+      return { ok: false, error: 'Cancelado', cancelled: true };
+    }
     pendingEditText = null;
+    isProcessing = false;
     return { ok: true, text };
   } catch (error) {
+    isProcessing = false;
     pendingEditText = null;
     logError('process-edit', error);
     let message = error instanceof Error ? error.message : 'Erro desconhecido';
