@@ -14,12 +14,16 @@ const tabButtons = document.querySelectorAll<HTMLButtonElement>('[data-tab-butto
 const tabPanels = document.querySelectorAll<HTMLElement>('[data-tab-panel]');
 const recordHotkeyInput = document.querySelector('#recordHotkey') as HTMLInputElement;
 const settingsHotkeyInput = document.querySelector('#settingsHotkey') as HTMLInputElement;
+const editHotkeyInput = document.querySelector('#editHotkey') as HTMLInputElement;
+const cancelHotkeyInput = document.querySelector('#cancelHotkey') as HTMLInputElement;
 
 let hotkeyInputFocusCount = 0;
 
 const DEFAULT_HOTKEYS = {
   record: 'Ctrl+Shift+S',
   settings: 'Ctrl+Shift+O',
+  edit: 'Ctrl+Shift+E',
+  cancel: 'Ctrl+Shift+Q',
 };
 
 type FormState = 'idle' | 'loading' | 'saving';
@@ -200,6 +204,8 @@ async function loadSettings() {
   languageSelect.value = language || 'pt';
   recordHotkeyInput.value = hotkeys?.record || DEFAULT_HOTKEYS.record;
   settingsHotkeyInput.value = hotkeys?.settings || DEFAULT_HOTKEYS.settings;
+  editHotkeyInput.value = hotkeys?.edit || DEFAULT_HOTKEYS.edit;
+  cancelHotkeyInput.value = hotkeys?.cancel || DEFAULT_HOTKEYS.cancel;
 }
 
 form.addEventListener('submit', async (event) => {
@@ -214,6 +220,8 @@ form.addEventListener('submit', async (event) => {
       hotkeys: {
         record: recordHotkeyInput.value.trim() || DEFAULT_HOTKEYS.record,
         settings: settingsHotkeyInput.value.trim() || DEFAULT_HOTKEYS.settings,
+        edit: editHotkeyInput.value.trim() || DEFAULT_HOTKEYS.edit,
+        cancel: cancelHotkeyInput.value.trim() || DEFAULT_HOTKEYS.cancel,
       },
     });
     setStatus('Configurações salvas', 'success');
@@ -251,10 +259,16 @@ closeBtn?.addEventListener('click', () => {
 setupTabs();
 recordHotkeyInput.readOnly = true;
 settingsHotkeyInput.readOnly = true;
+editHotkeyInput.readOnly = true;
+cancelHotkeyInput.readOnly = true;
 recordHotkeyInput.value = DEFAULT_HOTKEYS.record;
 settingsHotkeyInput.value = DEFAULT_HOTKEYS.settings;
+editHotkeyInput.value = DEFAULT_HOTKEYS.edit;
+cancelHotkeyInput.value = DEFAULT_HOTKEYS.cancel;
 bindHotkeyInput(recordHotkeyInput);
 bindHotkeyInput(settingsHotkeyInput);
+bindHotkeyInput(editHotkeyInput);
+bindHotkeyInput(cancelHotkeyInput);
 
 window.addEventListener('beforeunload', async () => {
   try {
@@ -272,7 +286,7 @@ async function init() {
   try {
     await loadDevices();
     await loadSettings();
-    setStatus('Pronto', 'info');
+    setStatus('', 'info');
     setFormState('idle');
   } catch (err) {
     const message =

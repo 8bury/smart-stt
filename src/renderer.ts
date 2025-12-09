@@ -1,6 +1,7 @@
 import './index.css';
 
 type UiState = 'loading' | 'idle' | 'recording' | 'processing' | 'error';
+type RecordingMode = 'dictation' | 'edit';
 
 const statusEl = document.querySelector('#status') as HTMLSpanElement;
 const hintEl = document.querySelector('#hint') as HTMLDivElement;
@@ -13,27 +14,33 @@ type OverlaySettings = {
   hotkeys?: {
     record?: string;
     settings?: string;
+    edit?: string;
   };
 };
 
 const DEFAULT_RECORD_HOTKEY = 'Ctrl+Shift+S';
+const DEFAULT_EDIT_HOTKEY = 'Ctrl+Shift+E';
+const DEFAULT_CANCEL_HOTKEY = 'Ctrl+Shift+Q';
 let settingsCache: OverlaySettings | null = null;
 
 let mediaRecorder: MediaRecorder | null = null;
 let chunks: BlobPart[] = [];
 let stream: MediaStream | null = null;
 let lastError = '';
+let skipProcessing = false;
 
 async function refreshSettings() {
   try {
     const data = await window.overlayAPI.getSettings();
     settingsCache = data;
     const recordHotkey = data.hotkeys?.record || DEFAULT_RECORD_HOTKEY;
-    hintEl.textContent = `Use ${recordHotkey} para gravar`;
+    const editHotkey = data.hotkeys?.edit || DEFAULT_EDIT_HOTKEY;
+    const cancelHotkey = data.hotkeys?.cancel || DEFAULT_CANCEL_HOTKEY;
+    hintEl.textContent = `Use ${recordHotkey} para ditar, ${editHotkey} para editar ou ${cancelHotkey} para cancelar`;
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('[refreshSettings] failed', err);
-    hintEl.textContent = `Use ${DEFAULT_RECORD_HOTKEY} para gravar`;
+    hintEl.textContent = `Use ${DEFAULT_RECORD_HOTKEY} para ditar, ${DEFAULT_EDIT_HOTKEY} para editar ou ${DEFAULT_CANCEL_HOTKEY} para cancelar`;
   }
 }
 
@@ -59,8 +66,9 @@ function resetStream() {
   chunks = [];
 }
 
-async function startRecording() {
+async function startRecording(mode: RecordingMode) {
   if (mediaRecorder) return;
+  skipProcessing = false;
   try {
     const settings = settingsCache ?? (await window.overlayAPI.getSettings());
     if (!settingsCache) {
@@ -89,6 +97,12 @@ async function startRecording() {
     };
 
     mediaRecorder.onstop = async () => {
+      if (skipProcessing) {
+        resetStream();
+        setState('idle');
+        void window.overlayAPI.hideOverlay();
+        return;
+      }
       const blob = new Blob(chunks, { type: 'audio/webm' });
       resetStream();
       if (blob.size === 0) {
@@ -97,9 +111,12 @@ async function startRecording() {
         return;
       }
 
-      setState('processing');
+      setState('processing', mode === 'edit' ? 'Editando texto...' : undefined);
       const buffer = await blob.arrayBuffer();
-      const result = await window.overlayAPI.processAudio(buffer);
+      const result =
+        mode === 'edit'
+          ? await window.overlayAPI.processEdit(buffer)
+          : await window.overlayAPI.processAudio(buffer);
       if (!result?.ok) {
         lastError = result?.error || 'Falha ao processar áudio';
         // eslint-disable-next-line no-console
@@ -110,7 +127,7 @@ async function startRecording() {
 
       // eslint-disable-next-line no-console
       console.log('[processAudio] success, text copied');
-      setState('idle', 'Texto copiado');
+      setState('idle', mode === 'edit' ? 'Texto editado' : 'Texto copiado');
       setTimeout(() => {
         setState('idle');
         window.overlayAPI.hideOverlay();
@@ -118,7 +135,7 @@ async function startRecording() {
     };
 
     mediaRecorder.start();
-    setState('recording');
+    setState('recording', mode === 'edit' ? 'Gravando instrução...' : undefined);
   } catch (err) {
     lastError =
       err instanceof Error ? err.message : 'Erro ao acessar microfone';
@@ -135,18 +152,38 @@ async function stopRecording() {
 }
 
 setState('idle');
-hintEl.textContent = `Use ${DEFAULT_RECORD_HOTKEY} para gravar`;
+hintEl.textContent = `Use ${DEFAULT_RECORD_HOTKEY} para ditar, ${DEFAULT_EDIT_HOTKEY} para editar ou ${DEFAULT_CANCEL_HOTKEY} para cancelar`;
 void refreshSettings();
 
-window.overlayAPI.onRecordingToggle((recording) => {
+window.overlayAPI.onRecordingToggle(({ recording, mode }) => {
   void refreshSettings();
 
   if (recording) {
-    setState('loading', 'Carregando...');
-    startRecording();
+    setState('loading', mode === 'edit' ? 'Preparando edição...' : 'Carregando...');
+    startRecording(mode);
   } else {
     stopRecording();
   }
+});
+
+window.overlayAPI.onRecordingCancel((mode) => {
+  skipProcessing = true;
+  stopRecording();
+  lastError = '';
+  setState('idle', mode === 'edit' ? 'Edição cancelada' : 'Gravação cancelada');
+  setTimeout(() => {
+    setState('idle');
+    void window.overlayAPI.hideOverlay();
+  }, 800);
+});
+
+window.overlayAPI.onEditWarning((message) => {
+  lastError = message;
+  setState('error', message);
+  setTimeout(() => {
+    setState('idle');
+    void window.overlayAPI.hideOverlay();
+  }, 1500);
 });
 
 setState('loading');

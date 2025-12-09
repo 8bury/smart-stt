@@ -95,7 +95,7 @@
             tabindex="0"
           >
             <p class="tab-helper">
-              Escolha os atalhos para gravar e abrir as configurações.
+            Escolha os atalhos para gravar, editar e abrir as configurações.
             </p>
 
             <div class="field">
@@ -110,6 +110,36 @@
                 placeholder="Ex: Ctrl+Shift+S"
               />
             </div>
+
+          <div class="field">
+            <label for="cancelHotkey">Atalho para cancelar</label>
+            <p class="field-hint">
+              Interrompe imediatamente a gravação ou edição sem processar o áudio.
+            </p>
+            <input
+              id="cancelHotkey"
+              name="cancelHotkey"
+              type="text"
+              inputmode="none"
+              autocomplete="off"
+              placeholder="Ex: Ctrl+Shift+Q"
+            />
+          </div>
+
+          <div class="field">
+            <label for="editHotkey">Atalho para editar texto</label>
+            <p class="field-hint">
+              Aciona o modo edição (usa o texto selecionado e sua instrução por voz).
+            </p>
+            <input
+              id="editHotkey"
+              name="editHotkey"
+              type="text"
+              inputmode="none"
+              autocomplete="off"
+              placeholder="Ex: Ctrl+Shift+E"
+            />
+          </div>
 
             <div class="field">
               <label for="settingsHotkey">Atalho para abrir configurações</label>
@@ -127,7 +157,7 @@
         </div>
 
         <div class="form-footer">
-          <span id="status" role="status" aria-live="polite" data-kind="info">Pronto</span>
+          <span id="status" role="status" aria-live="polite" data-kind="info"></span>
           <div class="actions">
             <button type="submit" id="save-btn">Salvar</button>
           </div>

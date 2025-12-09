@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 type HotkeySettings = {
   record?: string;
   settings?: string;
+  edit?: string;
+  cancel?: string;
 };
 
 type SettingsPayload = {
@@ -12,16 +14,38 @@ type SettingsPayload = {
   hotkeys?: HotkeySettings;
 };
 
+type RecordingMode = 'dictation' | 'edit';
+
+type RecordingTogglePayload = {
+  recording: boolean;
+  mode: RecordingMode;
+};
+
 const overlayAPI = {
-  onRecordingToggle: (callback: (recording: boolean) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, recording: boolean) =>
-      callback(recording);
+  onRecordingToggle: (callback: (payload: RecordingTogglePayload) => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: RecordingTogglePayload,
+    ) => callback(payload);
     ipcRenderer.on('recording-toggle', listener);
-    return () =>
-      ipcRenderer.removeListener('recording-toggle', listener);
+    return () => ipcRenderer.removeListener('recording-toggle', listener);
+  },
+  onRecordingCancel: (callback: (mode: RecordingMode) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: { mode: RecordingMode }) =>
+      callback(data.mode);
+    ipcRenderer.on('recording-cancel', listener);
+    return () => ipcRenderer.removeListener('recording-cancel', listener);
+  },
+  onEditWarning: (callback: (message: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, message: string) =>
+      callback(message);
+    ipcRenderer.on('edit-warning', listener);
+    return () => ipcRenderer.removeListener('edit-warning', listener);
   },
   processAudio: (arrayBuffer: ArrayBuffer) =>
     ipcRenderer.invoke('process-audio', arrayBuffer),
+  processEdit: (arrayBuffer: ArrayBuffer) =>
+    ipcRenderer.invoke('process-edit', arrayBuffer),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   hideOverlay: () => ipcRenderer.invoke('overlay:hide'),
 };

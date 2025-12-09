@@ -19,6 +19,8 @@ import { toFile } from 'openai/uploads';
 type HotkeySettings = {
   record?: string;
   settings?: string;
+  edit?: string;
+  cancel?: string;
 };
 
 type AppSettings = {
@@ -36,13 +38,19 @@ type SettingsStore = {
 const defaultHotkeys: Required<HotkeySettings> = {
   record: 'Ctrl+Shift+S',
   settings: 'Ctrl+Shift+O',
+  edit: 'Ctrl+Shift+E',
+  cancel: 'Ctrl+Shift+Q',
 };
+
+type RecordingMode = 'dictation' | 'edit';
 
 const logError = (context: string, error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
   // eslint-disable-next-line no-console
   console.error(`[${context}]`, message, error);
 };
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const store = new Store<AppSettings>({
   name: 'settings',
@@ -51,6 +59,9 @@ const store = new Store<AppSettings>({
 let overlayWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
 let isRecording = false;
+let recordingMode: RecordingMode = 'dictation';
+let pendingEditText: string | null = null;
+let cancelInProgress = false;
 let tray: Tray | null = null;
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -157,7 +168,7 @@ function createSettingsWindow() {
 
   settingsWindow = new BrowserWindow({
     width: 460,
-    height: 670,
+    height: 840,
     useContentSize: true,
     resizable: false,
     minimizable: false,
@@ -184,9 +195,16 @@ function createSettingsWindow() {
   });
 }
 
-function toggleRecording() {
+function toggleRecording(mode: RecordingMode = 'dictation') {
   if (!overlayWindow) {
     createOverlayWindow();
+  }
+
+  if (cancelInProgress) return;
+
+  const willStart = !isRecording;
+  if (willStart) {
+    recordingMode = mode;
   }
 
   isRecording = !isRecording;
@@ -194,10 +212,14 @@ function toggleRecording() {
     positionOverlayWindow();
     overlayWindow?.showInactive();
   } else {
+    pendingEditText = null;
     // Mantém visível para mostrar estado de processamento; ocultamos via IPC após concluir.
     overlayWindow?.showInactive();
   }
-  overlayWindow?.webContents.send('recording-toggle', isRecording);
+  overlayWindow?.webContents.send('recording-toggle', {
+    recording: isRecording,
+    mode: recordingMode,
+  });
 }
 
 function showSettings() {
@@ -223,19 +245,109 @@ function toggleSettingsWindow() {
   }
 }
 
+async function simulateCopy(): Promise<void> {
+  const psCommand =
+    "$wshell = New-Object -ComObject wscript.shell; Start-Sleep -Milliseconds 80; $wshell.SendKeys('^c')";
+
+  return new Promise((resolve, reject) => {
+    const child = spawn('powershell', ['-NoProfile', '-Command', psCommand]);
+    child.once('error', (err) => reject(err));
+    child.once('exit', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`SendKeys saiu com código ${code}`));
+      }
+    });
+  });
+}
+
+async function captureSelectedOrClipboardText() {
+  const previousClipboard = clipboard.readText();
+  let selection = '';
+
+  try {
+    clipboard.clear();
+  } catch (err) {
+    logError('captureSelectedOrClipboardText:clear', err);
+  }
+
+  try {
+    await simulateCopy();
+    await delay(120);
+    selection = clipboard.readText().trim();
+  } catch (err) {
+    logError('captureSelectedOrClipboardText:copy', err);
+  } finally {
+    try {
+      clipboard.writeText(previousClipboard);
+    } catch (err) {
+      logError('captureSelectedOrClipboardText:restore', err);
+    }
+  }
+
+  const text = selection || previousClipboard.trim();
+  const source = selection
+    ? ('selection' as const)
+    : previousClipboard.trim()
+      ? ('clipboard' as const)
+      : ('empty' as const);
+
+  return { text, source };
+}
+
+async function startEditMode() {
+  const { text } = await captureSelectedOrClipboardText();
+
+  if (!text) {
+    if (!overlayWindow) {
+      createOverlayWindow();
+    }
+    overlayWindow?.showInactive();
+    overlayWindow?.webContents.send(
+      'edit-warning',
+      'Selecione ou copie um texto e tente de novo.',
+    );
+    return;
+  }
+
+  pendingEditText = text;
+  toggleRecording('edit');
+}
+
+function cancelRecording() {
+  if (!isRecording) return;
+  cancelInProgress = true;
+  isRecording = false;
+  pendingEditText = null;
+  overlayWindow?.webContents.send('recording-cancel', { mode: recordingMode });
+  setTimeout(() => {
+    cancelInProgress = false;
+  }, 50);
+}
+
 function getHotkeys(): Required<HotkeySettings> {
   const saved = store.get('hotkeys') ?? {};
   return {
     record: saved.record?.trim() || defaultHotkeys.record,
     settings: saved.settings?.trim() || defaultHotkeys.settings,
+    edit: saved.edit?.trim() || defaultHotkeys.edit,
+    cancel: saved.cancel?.trim() || defaultHotkeys.cancel,
   };
 }
 
 function registerShortcuts() {
   unregisterShortcuts();
 
-  const { record, settings } = getHotkeys();
+  const { record, settings, edit, cancel } = getHotkeys();
+  const used = new Set<string>();
   const register = (accel: string, action: () => void, label: string) => {
+    if (used.has(accel)) {
+      // eslint-disable-next-line no-console
+      console.warn(`Atalho duplicado ignorado (${label}): ${accel}`);
+      return;
+    }
+    used.add(accel);
     const ok = globalShortcut.register(accel, action);
     if (!ok) {
       // eslint-disable-next-line no-console
@@ -243,12 +355,11 @@ function registerShortcuts() {
     }
   };
 
-  register(record, toggleRecording, 'Gravar');
-  if (record === settings) {
-    // eslint-disable-next-line no-console
-    console.warn('Atalhos duplicados; usando o de gravação para ambos.');
-    return;
-  }
+  register(record, () => toggleRecording('dictation'), 'Gravar');
+  register(edit, () => {
+    void startEditMode();
+  }, 'Edição');
+  register(cancel, cancelRecording, 'Cancelar gravação/edição');
   register(settings, toggleSettingsWindow, 'Configurações');
 }
 
@@ -310,7 +421,7 @@ async function cleanText(text: string) {
   const languageLabel = language === 'en' ? 'English' : 'Portuguese';
   try {
     const response = await client.chat.completions.create({
-      model: 'gpt-5-mini',
+      model: 'gpt-5-nano',
       messages: [
         {
           role: 'system',
@@ -366,6 +477,67 @@ async function handleAudio(buffer: Buffer) {
   return cleanedText;
 }
 
+async function applyInstructionToText(instruction: string, baseText: string) {
+  const client = getClient();
+  const language = store.get('language') ?? 'pt';
+  const languageLabel = language === 'en' ? 'English' : 'Portuguese';
+
+  const systemPrompt = [
+    'Você é um assistente de edição de textos.',
+    'Recebe uma instrução do usuário e um texto base.',
+    'Retorne somente o texto final editado, sem explicações ou marcações extras.',
+    `Responda em ${languageLabel} preservando formatação útil (quebras, listas).`,
+  ].join(' ');
+
+  const userContent = `Instrução do usuário:\n${instruction.trim()}\n\nTexto base para editar:\n${baseText}`;
+
+  const response = await client.chat.completions.create({
+    model: 'gpt-5-nano',
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userContent },
+    ],
+    temperature: 1,
+  });
+
+  return response.choices[0]?.message?.content?.trim() ?? '';
+}
+
+async function handleEditAudio(buffer: Buffer) {
+  const baseText = pendingEditText;
+  if (!baseText) {
+    throw new Error('Nenhum texto disponível para editar. Selecione ou copie e tente novamente.');
+  }
+
+  try {
+    // eslint-disable-next-line no-console
+    console.log('[handleEditAudio] start');
+    const instruction = (await transcribeAudio(buffer)).trim();
+    if (!instruction) {
+      throw new Error('Instrução de edição vazia.');
+    }
+
+    const editedText = await applyInstructionToText(instruction, baseText);
+    if (!editedText) {
+      throw new Error('A LLM retornou texto vazio ao editar.');
+    }
+
+    clipboard.writeText(editedText);
+    try {
+      await simulatePaste();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('Falha ao simular Ctrl+V no modo edição; texto ficou no clipboard.', err);
+    }
+
+    // eslint-disable-next-line no-console
+    console.log('[handleEditAudio] done');
+    return editedText;
+  } finally {
+    pendingEditText = null;
+  }
+}
+
 ipcMain.handle('settings:get', () => ({
   apiKey: store.get('apiKey') ?? '',
   deviceId: store.get('deviceId') ?? '',
@@ -413,6 +585,20 @@ ipcMain.handle(
           hotkeysChanged = hotkeysChanged || settings !== current.settings;
         }
       }
+      if (typeof payload.hotkeys.cancel === 'string') {
+        const cancel = payload.hotkeys.cancel.trim();
+        if (cancel) {
+          next.cancel = cancel;
+          hotkeysChanged = hotkeysChanged || cancel !== current.cancel;
+        }
+      }
+      if (typeof payload.hotkeys.edit === 'string') {
+        const edit = payload.hotkeys.edit.trim();
+        if (edit) {
+          next.edit = edit;
+          hotkeysChanged = hotkeysChanged || edit !== current.edit;
+        }
+      }
 
       store.set('hotkeys', next);
     }
@@ -438,6 +624,26 @@ ipcMain.handle('process-audio', async (_event, arrayBuffer: ArrayBuffer) => {
     return { ok: true, text };
   } catch (error) {
     logError('process-audio', error);
+    let message = error instanceof Error ? error.message : 'Erro desconhecido';
+    if (error instanceof APIError) {
+      const apiErr = error as APIError & {
+        response?: { data?: { error?: { message?: string } } };
+      };
+      message =
+        apiErr.response?.data?.error?.message ||
+        `${apiErr.status || 400} ${apiErr.code || ''} ${apiErr.message}`;
+    }
+    return { ok: false, error: message };
+  }
+});
+
+ipcMain.handle('process-edit', async (_event, arrayBuffer: ArrayBuffer) => {
+  const buffer = Buffer.from(arrayBuffer);
+  try {
+    const text = await handleEditAudio(buffer);
+    return { ok: true, text };
+  } catch (error) {
+    logError('process-edit', error);
     let message = error instanceof Error ? error.message : 'Erro desconhecido';
     if (error instanceof APIError) {
       const apiErr = error as APIError & {
