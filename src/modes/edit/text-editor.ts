@@ -1,4 +1,10 @@
 import { OpenAI } from 'openai';
+import { withRetry, createAPIRetryConfig } from '../../utils/retry';
+import { withTimeout } from '../../utils/timeout';
+import { categorizeAPIError, logError } from '../../utils/errors';
+
+// Timeout for GPT text editing: 20 seconds
+const GPT_EDIT_TIMEOUT_MS = 20000;
 
 /**
  * Aplica uma instrução de voz a um texto base usando GPT.
@@ -8,6 +14,7 @@ import { OpenAI } from 'openai';
  * @param apiKey - Chave da API OpenAI
  * @param language - Idioma para a edição ('pt' ou 'en')
  * @returns Texto editado de acordo com a instrução
+ * @throws SmartSTTError se a API falhar
  */
 export async function applyInstructionToText(
   instruction: string,
@@ -27,14 +34,29 @@ export async function applyInstructionToText(
 
   const userContent = `Instrução do usuário:\n${instruction.trim()}\n\nTexto base para editar:\n${baseText}`;
 
-  const response = await client.chat.completions.create({
-    model: 'gpt-5-nano',
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userContent },
-    ],
-    temperature: 1,
-  });
+  try {
+    // Wrap API call with retry logic and timeout
+    const response = await withRetry(
+      () => withTimeout(
+        () => client.chat.completions.create({
+          model: 'gpt-5-nano',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent },
+          ],
+          temperature: 1,
+        }),
+        GPT_EDIT_TIMEOUT_MS,
+        'gpt-edit-text'
+      ),
+      createAPIRetryConfig()
+    );
 
-  return response.choices[0]?.message?.content?.trim() ?? '';
+    return response.choices[0]?.message?.content?.trim() ?? '';
+  } catch (err) {
+    // Categorize and rethrow error
+    const smartError = categorizeAPIError(err);
+    logError('applyInstructionToText', smartError);
+    throw smartError;
+  }
 }

@@ -1,6 +1,6 @@
 import './index.css';
 
-type UiState = 'loading' | 'idle' | 'recording' | 'processing' | 'error';
+type UiState = 'loading' | 'idle' | 'recording' | 'processing' | 'error' | 'warning';
 type RecordingMode = 'dictation' | 'edit';
 
 const statusEl = document.querySelector('#status') as HTMLSpanElement | null;
@@ -186,12 +186,13 @@ function setState(state: UiState, message?: string) {
       recording: 'Gravando...',
       processing: 'Processando...',
       error: lastError || 'Erro',
+      warning: lastError || 'Aviso',
     }[state];
   }
 
   if (state === 'processing') {
     setWaveformMode('processing');
-  } else if (state === 'idle' || state === 'loading' || state === 'error') {
+  } else if (state === 'idle' || state === 'loading' || state === 'error' || state === 'warning') {
     setWaveformMode('idle');
   }
 }
@@ -272,11 +273,33 @@ async function startRecording(mode: RecordingMode) {
         return;
       }
 
+      // Check for warnings (partial success - e.g. paste failed but text is in clipboard)
+      if (result?.ok && result.warning) {
+        lastError = result.warning;
+        // eslint-disable-next-line no-console
+        console.log('[processAudio] warning:', result.warning);
+        setState('warning', result.warning);
+        // Auto-dismiss warning after 3 seconds
+        setTimeout(() => {
+          setState('idle');
+          void window.overlayAPI.hideOverlay();
+        }, 3000);
+        return;
+      }
+
       if (!result?.ok) {
         lastError = result?.error || 'Falha ao processar áudio';
         // eslint-disable-next-line no-console
         console.error('[processAudio] failed', result?.error);
         setState('error');
+        // Auto-dismiss errors after 5 seconds (unless it's a critical error like API auth)
+        const isDismissable = !result?.category || result.category !== 'api_auth';
+        if (isDismissable) {
+          setTimeout(() => {
+            setState('idle');
+            void window.overlayAPI.hideOverlay();
+          }, 5000);
+        }
         return;
       }
 

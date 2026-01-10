@@ -2,12 +2,18 @@ import { clipboard } from 'electron';
 import type { ClipboardOperations } from '../../clipboard';
 import { transcribeAudio } from '../shared/transcription';
 import { applyInstructionToText } from './text-editor';
+import {
+  createEditNoTextError,
+  createEditEmptyInstructionError,
+  createEditEmptyResultError,
+  createCopyFailureError,
+  createPasteFailureError,
+  logError,
+} from '../../utils/errors';
+import { withTimeout } from '../../utils/timeout';
 
-const logError = (context: string, error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  // eslint-disable-next-line no-console
-  console.error(`[${context}]`, message, error);
-};
+// Timeout for clipboard operations: 2 seconds
+const CLIPBOARD_TIMEOUT_MS = 2000;
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -17,6 +23,7 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  *
  * @param clipboardOps - Implementação de operações de clipboard específica da plataforma
  * @returns Objeto com texto capturado e fonte ('selection' ou 'empty')
+ * @throws SmartSTTError if copy operation fails
  */
 export async function captureSelectedOrClipboardText(
   clipboardOps: ClipboardOperations,
@@ -31,11 +38,16 @@ export async function captureSelectedOrClipboardText(
   }
 
   try {
-    await clipboardOps.simulateCopy();
+    await withTimeout(
+      () => clipboardOps.simulateCopy(),
+      CLIPBOARD_TIMEOUT_MS,
+      'clipboard-copy'
+    );
     await delay(180);
     selection = clipboard.readText().trim();
   } catch (err) {
-    logError('captureSelectedOrClipboardText:copy', err);
+    // Copy failed - throw structured error
+    throw createCopyFailureError();
   } finally {
     try {
       clipboard.writeText(previousClipboard);
@@ -60,6 +72,7 @@ export async function captureSelectedOrClipboardText(
  * @param language - Idioma para transcrição ('pt' ou 'en')
  * @param pendingEditText - Texto base previamente capturado (opcional)
  * @returns Texto editado final
+ * @throws SmartSTTError for various edit mode errors
  */
 export async function handleEditAudio(
   buffer: Buffer,
@@ -78,13 +91,12 @@ export async function handleEditAudio(
       }
     } catch (err) {
       logError('handleEditAudio:capture-fallback', err);
+      throw err; // Propagate clipboard errors
     }
   }
 
   if (!baseText) {
-    throw new Error(
-      'Nenhum texto disponível para editar. Selecione ou copie e tente novamente.',
-    );
+    throw createEditNoTextError();
   }
 
   // eslint-disable-next-line no-console
@@ -92,7 +104,7 @@ export async function handleEditAudio(
 
   const instruction = (await transcribeAudio(buffer, apiKey, language)).trim();
   if (!instruction) {
-    throw new Error('Instrução de edição vazia.');
+    throw createEditEmptyInstructionError();
   }
 
   const editedText = await applyInstructionToText(
@@ -102,19 +114,21 @@ export async function handleEditAudio(
     language,
   );
   if (!editedText) {
-    throw new Error('A LLM retornou texto vazio ao editar.');
+    throw createEditEmptyResultError();
   }
 
   clipboard.writeText(editedText);
 
   try {
-    await clipboardOps.simulatePaste();
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      'Falha ao simular Ctrl+V no modo edição; texto ficou no clipboard.',
-      err,
+    await withTimeout(
+      () => clipboardOps.simulatePaste(),
+      CLIPBOARD_TIMEOUT_MS,
+      'clipboard-paste'
     );
+  } catch (err) {
+    // Paste failed - text is in clipboard but not pasted
+    // This is a non-fatal error (partial success)
+    throw createPasteFailureError();
   }
 
   // eslint-disable-next-line no-console

@@ -2,6 +2,11 @@ import { clipboard } from 'electron';
 import type { ClipboardOperations } from '../../clipboard';
 import { transcribeAudio } from '../shared/transcription';
 import { cleanText } from '../shared/text-processing';
+import { createPasteFailureError } from '../../utils/errors';
+import { withTimeout } from '../../utils/timeout';
+
+// Timeout for clipboard paste operation: 2 seconds
+const PASTE_TIMEOUT_MS = 2000;
 
 /**
  * Processa áudio no modo de ditado.
@@ -12,6 +17,7 @@ import { cleanText } from '../shared/text-processing';
  * @param apiKey - Chave da API OpenAI
  * @param language - Idioma para transcrição ('pt' ou 'en')
  * @returns Texto limpo e transcrito
+ * @throws SmartSTTError with CLIPBOARD category if paste fails (non-fatal)
  */
 export async function handleDictationAudio(
   buffer: Buffer,
@@ -28,10 +34,15 @@ export async function handleDictationAudio(
   clipboard.writeText(cleanedText);
 
   try {
-    await clipboardOps.simulatePaste();
+    await withTimeout(
+      () => clipboardOps.simulatePaste(),
+      PASTE_TIMEOUT_MS,
+      'clipboard-paste'
+    );
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn('Falha ao simular Ctrl+V, texto ficou no clipboard.', err);
+    // Paste failed - text is in clipboard but not pasted
+    // This is a non-fatal error (partial success)
+    throw createPasteFailureError();
   }
 
   // eslint-disable-next-line no-console

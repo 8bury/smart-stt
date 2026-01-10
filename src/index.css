@@ -53,6 +53,10 @@ body {
   border-color: rgba(255, 80, 80, 0.2);
 }
 
+.overlay[data-state='warning'] {
+  border-color: rgba(255, 200, 80, 0.3);
+}
+
 .waveform {
   display: flex;
   align-items: center;

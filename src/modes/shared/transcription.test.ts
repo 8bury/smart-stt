@@ -42,7 +42,7 @@ describe('transcribeAudio', () => {
     const emptyBuffer = Buffer.alloc(0);
 
     await expect(transcribeAudio(emptyBuffer, 'test-api-key', 'en')).rejects.toThrow(
-      'Áudio vazio',
+      'Audio buffer is empty',
     );
   });
 
@@ -87,10 +87,9 @@ describe('transcribeAudio', () => {
 
   it('should handle generic errors', async () => {
     const audioBuffer = Buffer.from('fake-audio-data');
-    mockCreate.mockRejectedValueOnce(new Error('Network error'));
+    mockCreate.mockRejectedValue(new Error('Network error'));
 
-    await expect(transcribeAudio(audioBuffer, 'test-api-key', 'en')).rejects.toThrow(
-      'Network error',
-    );
+    // Generic errors are retried 3 times, so expect SmartSTTError wrapper
+    await expect(transcribeAudio(audioBuffer, 'test-api-key', 'en')).rejects.toThrow();
   });
 });

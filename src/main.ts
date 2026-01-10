@@ -421,6 +421,25 @@ ipcMain.handle('process-audio', async (_event, arrayBuffer: ArrayBuffer) => {
   } catch (error) {
     isProcessing = false;
     logError('process-audio', error);
+
+    // Check if this is a SmartSTTError
+    if (error && typeof error === 'object' && 'category' in error && 'userMessage' in error) {
+      const smartError = error as { category: string; userMessage: string; canRetry: boolean };
+
+      // Clipboard errors are warnings (partial success - text is in clipboard)
+      if (smartError.category === 'clipboard') {
+        return { ok: true, text: '', warning: smartError.userMessage, category: smartError.category };
+      }
+
+      return {
+        ok: false,
+        error: smartError.userMessage,
+        category: smartError.category,
+        canRetry: smartError.canRetry
+      };
+    }
+
+    // Fallback for non-SmartSTTError
     let message = error instanceof Error ? error.message : 'Erro desconhecido';
     if (error instanceof APIError) {
       const apiErr = error as APIError & {
@@ -467,6 +486,25 @@ ipcMain.handle('process-edit', async (_event, arrayBuffer: ArrayBuffer) => {
     isProcessing = false;
     pendingEditText = null;
     logError('process-edit', error);
+
+    // Check if this is a SmartSTTError
+    if (error && typeof error === 'object' && 'category' in error && 'userMessage' in error) {
+      const smartError = error as { category: string; userMessage: string; canRetry: boolean };
+
+      // Clipboard errors are warnings (partial success - text is in clipboard)
+      if (smartError.category === 'clipboard') {
+        return { ok: true, text: '', warning: smartError.userMessage, category: smartError.category };
+      }
+
+      return {
+        ok: false,
+        error: smartError.userMessage,
+        category: smartError.category,
+        canRetry: smartError.canRetry
+      };
+    }
+
+    // Fallback for non-SmartSTTError
     let message = error instanceof Error ? error.message : 'Erro desconhecido';
     if (error instanceof APIError) {
       const apiErr = error as APIError & {
