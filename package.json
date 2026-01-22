@@ -45,5 +45,11 @@
     "electron-squirrel-startup": "^1.0.1",
     "electron-store": "^11.0.2",
     "openai": "^6.10.0"
+  },
+  "overrides": {
+    "@inquirer/editor": "^5.0.4",
+    "@inquirer/external-editor": "^2.0.3",
+    "@inquirer/prompts": "^8.2.0",
+    "tar": "^7.5.6"
   }
 }
