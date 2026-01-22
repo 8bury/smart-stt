@@ -1,0 +1,139 @@
+name: Build and upload release assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag
+        required: true
+        default: v1.0.0
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows installer
+        run: npm run make
+
+      - name: Upload Windows installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" --notes "initial release"
+          shopt -s globstar
+          mapfile -t installers < <(compgen -G "out/make/squirrel.windows/**/*.exe")
+          if [ ${#installers[@]} -eq 0 ]; then
+            echo "No Windows installer found."
+            exit 1
+          fi
+          gh release upload "$TAG" "${installers[@]}" --clobber
+
+      - name: Remove non-installer Windows assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --json assets -q ".assets[].name" | while IFS= read -r asset; do
+            case "$asset" in
+              RELEASES|*.nupkg)
+                gh release delete-asset "$TAG" "$asset" -y
+                ;;
+            esac
+          done
+
+  build-macos:
+    runs-on: macos-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build macOS package
+        run: npm run make
+
+      - name: Upload macOS package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" --notes "initial release"
+          shopt -s globstar
+          mapfile -t packages < <(compgen -G "out/make/zip/darwin/**/*.zip")
+          if [ ${#packages[@]} -eq 0 ]; then
+            echo "No macOS package found."
+            exit 1
+          fi
+          gh release upload "$TAG" "${packages[@]}" --clobber
+
+  build-linux:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Linux packages
+        run: npm run make
+
+      - name: Upload Linux packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" --notes "initial release"
+          shopt -s globstar
+          mapfile -t debs < <(compgen -G "out/make/deb/**/*.deb")
+          mapfile -t rpms < <(compgen -G "out/make/rpm/**/*.rpm")
+          if [ ${#debs[@]} -eq 0 ] && [ ${#rpms[@]} -eq 0 ]; then
+            echo "No Linux packages found."
+            exit 1
+          fi
+          gh release upload "$TAG" "${debs[@]}" "${rpms[@]}" --clobber
