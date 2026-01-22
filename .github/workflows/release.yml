@@ -40,8 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release edit "$TAG" --notes "initial release"
-          shopt -s globstar
-          mapfile -t installers < <(compgen -G "out/make/squirrel.windows/**/*.exe")
+          mapfile -t installers < <(find out/make/squirrel.windows -type f -name "*.exe")
           if [ ${#installers[@]} -eq 0 ]; then
             echo "No Windows installer found."
             exit 1
@@ -90,8 +89,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release edit "$TAG" --notes "initial release"
-          shopt -s globstar
-          mapfile -t packages < <(compgen -G "out/make/zip/darwin/**/*.zip")
+          mapfile -t packages < <(find out/make -type f -name "*.zip" -path "*/zip/darwin/*")
           if [ ${#packages[@]} -eq 0 ]; then
             echo "No macOS package found."
             exit 1
@@ -129,9 +127,8 @@ jobs:
         run: |
           set -euo pipefail
           gh release edit "$TAG" --notes "initial release"
-          shopt -s globstar
-          mapfile -t debs < <(compgen -G "out/make/deb/**/*.deb")
-          mapfile -t rpms < <(compgen -G "out/make/rpm/**/*.rpm")
+          mapfile -t debs < <(find out/make -type f -name "*.deb" -path "*/deb/*")
+          mapfile -t rpms < <(find out/make -type f -name "*.rpm" -path "*/rpm/*")
           if [ ${#debs[@]} -eq 0 ] && [ ${#rpms[@]} -eq 0 ]; then
             echo "No Linux packages found."
             exit 1
