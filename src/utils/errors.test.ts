@@ -199,7 +199,7 @@ describe('categorizeAPIError', () => {
   });
 
   it('should categorize errors without status as network error', () => {
-    const apiError = new APIError(undefined as any, null, 'Connection failed', new Headers());
+    const apiError = new APIError(Number.NaN, null, 'Connection failed', new Headers());
     const error = categorizeAPIError(apiError);
 
     expect(error.category).toBe(ErrorCategory.NETWORK);
