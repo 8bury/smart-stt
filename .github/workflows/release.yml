@@ -40,7 +40,10 @@ jobs:
         run: |
           set -euo pipefail
           gh release edit "$TAG" --notes "initial release"
-          mapfile -t installers < <(find out/make/squirrel.windows -type f -name "*.exe")
+          installers=()
+          while IFS= read -r file; do
+            installers+=("$file")
+          done < <(find out/make/squirrel.windows -type f -name "*.exe" -print)
           if [ ${#installers[@]} -eq 0 ]; then
             echo "No Windows installer found."
             exit 1
@@ -89,7 +92,10 @@ jobs:
         run: |
           set -euo pipefail
           gh release edit "$TAG" --notes "initial release"
-          mapfile -t packages < <(find out/make -type f -name "*.zip" -path "*/zip/darwin/*")
+          packages=()
+          while IFS= read -r file; do
+            packages+=("$file")
+          done < <(find out/make -type f -name "*.zip" -path "*/zip/darwin/*" -print)
           if [ ${#packages[@]} -eq 0 ]; then
             echo "No macOS package found."
             exit 1
@@ -127,8 +133,14 @@ jobs:
         run: |
           set -euo pipefail
           gh release edit "$TAG" --notes "initial release"
-          mapfile -t debs < <(find out/make -type f -name "*.deb" -path "*/deb/*")
-          mapfile -t rpms < <(find out/make -type f -name "*.rpm" -path "*/rpm/*")
+          debs=()
+          while IFS= read -r file; do
+            debs+=("$file")
+          done < <(find out/make -type f -name "*.deb" -path "*/deb/*" -print)
+          rpms=()
+          while IFS= read -r file; do
+            rpms+=("$file")
+          done < <(find out/make -type f -name "*.rpm" -path "*/rpm/*" -print)
           if [ ${#debs[@]} -eq 0 ] && [ ${#rpms[@]} -eq 0 ]; then
             echo "No Linux packages found."
             exit 1
