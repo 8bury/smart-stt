@@ -1,6 +1,7 @@
 import type { ClipboardOperations } from './interface';
 import { WindowsClipboard } from './windows';
 import { LinuxClipboard } from './linux';
+import { MacOSClipboard } from './macos';
 
 /**
  * Factory function que retorna a implementação correta de ClipboardOperations
@@ -17,6 +18,8 @@ export function getClipboardOperations(): ClipboardOperations {
       return new WindowsClipboard();
     case 'linux':
       return new LinuxClipboard();
+    case 'darwin':
+      return new MacOSClipboard();
     default:
       throw new Error(`Plataforma não suportada: ${platform}`);
   }
@@ -25,3 +28,4 @@ export function getClipboardOperations(): ClipboardOperations {
 export type { ClipboardOperations };
 export { WindowsClipboard } from './windows';
 export { LinuxClipboard } from './linux';
+export { MacOSClipboard } from './macos';

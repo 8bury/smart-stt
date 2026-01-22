@@ -2,7 +2,7 @@ import { clipboard } from 'electron';
 import type { ClipboardOperations } from '../../clipboard';
 import { transcribeAudio } from '../shared/transcription';
 import { cleanText } from '../shared/text-processing';
-import { createPasteFailureError } from '../../utils/errors';
+import { CancelledError, createPasteFailureError } from '../../utils/errors';
 import { withTimeout } from '../../utils/timeout';
 
 // Timeout for clipboard paste operation: 2 seconds
@@ -24,14 +24,30 @@ export async function handleDictationAudio(
   clipboardOps: ClipboardOperations,
   apiKey: string,
   language: 'pt' | 'en',
+  shouldCancel?: () => boolean,
 ): Promise<string> {
   // eslint-disable-next-line no-console
   console.log('[handleDictationAudio] start');
 
+  if (shouldCancel?.()) {
+    throw new CancelledError();
+  }
+
   const rawText = await transcribeAudio(buffer, apiKey, language);
+  if (shouldCancel?.()) {
+    throw new CancelledError();
+  }
+
   const cleanedText = await cleanText(rawText, apiKey, language);
+  if (shouldCancel?.()) {
+    throw new CancelledError();
+  }
 
   clipboard.writeText(cleanedText);
+
+  if (shouldCancel?.()) {
+    throw new CancelledError();
+  }
 
   try {
     await withTimeout(

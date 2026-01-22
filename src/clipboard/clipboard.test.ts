@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import {
   mockSpawn,
   createSuccessfulChildProcess,
@@ -11,7 +11,18 @@ vi.mock('node:child_process', () => ({
   spawn: mockSpawn,
 }));
 
-const { getClipboardOperations, WindowsClipboard, LinuxClipboard } = await import('./index');
+let getClipboardOperations: typeof import('./index').getClipboardOperations;
+let WindowsClipboard: typeof import('./index').WindowsClipboard;
+let LinuxClipboard: typeof import('./index').LinuxClipboard;
+let MacOSClipboard: typeof import('./index').MacOSClipboard;
+
+beforeAll(async () => {
+  const clipboardModule = await import('./index');
+  getClipboardOperations = clipboardModule.getClipboardOperations;
+  WindowsClipboard = clipboardModule.WindowsClipboard;
+  LinuxClipboard = clipboardModule.LinuxClipboard;
+  MacOSClipboard = clipboardModule.MacOSClipboard;
+});
 
 describe('getClipboardOperations', () => {
   const originalPlatform = process.platform;
@@ -38,9 +49,10 @@ describe('getClipboardOperations', () => {
     expect(clipboard).toBeInstanceOf(LinuxClipboard);
   });
 
-  it('should throw error for unsupported platforms', () => {
+  it('should return MacOSClipboard on darwin', () => {
     setPlatform('darwin');
-    expect(() => getClipboardOperations()).toThrow('Plataforma não suportada: darwin');
+    const clipboard = getClipboardOperations();
+    expect(clipboard).toBeInstanceOf(MacOSClipboard);
   });
 
   it('should throw error for unknown platforms', () => {
@@ -155,6 +167,73 @@ describe('LinuxClipboard', () => {
       await clipboard.simulateCopy();
 
       expect(mockSpawn).toHaveBeenCalledWith('ydotool', ['key', 'ctrl+c']);
+    });
+  });
+});
+
+describe('MacOSClipboard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('simulatePaste', () => {
+    it('should call osascript with correct paste command', async () => {
+      mockSpawn.mockReturnValue(createSuccessfulChildProcess());
+
+      const clipboard = new MacOSClipboard();
+      await clipboard.simulatePaste();
+
+      expect(mockSpawn).toHaveBeenCalledWith('osascript', [
+        '-e',
+        'tell application "System Events"',
+        '-e',
+        'delay 0.08',
+        '-e',
+        'keystroke "v" using {command down}',
+        '-e',
+        'end tell',
+      ]);
+    });
+
+    it('should reject on non-zero exit code', async () => {
+      mockSpawn.mockReturnValue(createFailedChildProcess());
+
+      const clipboard = new MacOSClipboard();
+      await expect(clipboard.simulatePaste()).rejects.toThrow('osascript saiu com codigo 1');
+    });
+
+    it('should reject on spawn error', async () => {
+      mockSpawn.mockReturnValue(createErrorChildProcess(new Error('Spawn failed')));
+
+      const clipboard = new MacOSClipboard();
+      await expect(clipboard.simulatePaste()).rejects.toThrow('Spawn failed');
+    });
+  });
+
+  describe('simulateCopy', () => {
+    it('should call osascript with correct copy command', async () => {
+      mockSpawn.mockReturnValue(createSuccessfulChildProcess());
+
+      const clipboard = new MacOSClipboard();
+      await clipboard.simulateCopy();
+
+      expect(mockSpawn).toHaveBeenCalledWith('osascript', [
+        '-e',
+        'tell application "System Events"',
+        '-e',
+        'delay 0.08',
+        '-e',
+        'keystroke "c" using {command down}',
+        '-e',
+        'end tell',
+      ]);
+    });
+
+    it('should reject on non-zero exit code', async () => {
+      mockSpawn.mockReturnValue(createFailedChildProcess());
+
+      const clipboard = new MacOSClipboard();
+      await expect(clipboard.simulateCopy()).rejects.toThrow('osascript saiu com codigo 1');
     });
   });
 });

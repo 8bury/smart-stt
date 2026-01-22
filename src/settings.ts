@@ -1,4 +1,5 @@
 import './index.css';
+import { DEFAULT_HOTKEYS } from './types/settings';
 
 const form = document.querySelector('form') as HTMLFormElement;
 const apiKeyInput = document.querySelector('#apiKey') as HTMLInputElement;
@@ -18,13 +19,6 @@ const editHotkeyInput = document.querySelector('#editHotkey') as HTMLInputElemen
 const cancelHotkeyInput = document.querySelector('#cancelHotkey') as HTMLInputElement;
 
 let hotkeyInputFocusCount = 0;
-
-const DEFAULT_HOTKEYS = {
-  record: 'Ctrl+Shift+S',
-  settings: 'Ctrl+Shift+O',
-  edit: 'Ctrl+Shift+E',
-  cancel: 'Ctrl+Shift+Q',
-};
 
 type FormState = 'idle' | 'loading' | 'saving';
 

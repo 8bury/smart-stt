@@ -26,6 +26,17 @@ export interface SmartSTTErrorParams {
   originalError?: Error;
 }
 
+export class CancelledError extends Error {
+  constructor(message = 'Operation cancelled by user') {
+    super(message);
+    this.name = 'CancelledError';
+  }
+}
+
+export function isCancelledError(error: unknown): error is CancelledError {
+  return error instanceof CancelledError;
+}
+
 /**
  * Custom error class with structured information for error handling
  */
@@ -270,6 +281,9 @@ export function categorizeAPIError(error: unknown): SmartSTTError {
  * Determines if an error is retryable based on its type
  */
 export function isRetryableError(error: unknown): boolean {
+  if (error instanceof CancelledError) {
+    return false;
+  }
   if (error instanceof SmartSTTError) {
     return error.canRetry;
   }

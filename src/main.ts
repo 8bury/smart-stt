@@ -1,13 +1,4 @@
-import {
-  app,
-  BrowserWindow,
-  globalShortcut,
-  ipcMain,
-  screen,
-  Tray,
-  Menu,
-  nativeImage,
-} from 'electron';
+import { app, BrowserWindow, ipcMain, Tray } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import Store from 'electron-store';
@@ -15,34 +6,22 @@ import { APIError } from 'openai';
 import { getClipboardOperations } from './clipboard';
 import { handleDictationAudio } from './modes/dictation';
 import { handleEditAudio, captureSelectedOrClipboardText } from './modes/edit';
+import { createOverlayWindow, createSettingsWindow, positionOverlayWindow } from './main/windows';
+import { createTray } from './main/tray';
+import { registerShortcuts, unregisterShortcuts, getHotkeys } from './main/shortcuts';
+import type { AppSettings, HotkeySettings, SettingsStore } from './types/settings';
+import type { RecordingMode } from './types/recording';
+import { SmartSTTError, createMissingApiKeyError, isCancelledError } from './utils/errors';
 
-type HotkeySettings = {
-  record?: string;
-  settings?: string;
-  edit?: string;
-  cancel?: string;
+type ProcessResponse = {
+  ok: boolean;
+  text?: string;
+  error?: string;
+  warning?: string;
+  category?: string;
+  canRetry?: boolean;
+  cancelled?: boolean;
 };
-
-type AppSettings = {
-  apiKey?: string;
-  deviceId?: string;
-  language?: 'pt' | 'en';
-  hotkeys?: HotkeySettings;
-};
-
-type SettingsStore = {
-  get: <K extends keyof AppSettings>(key: K) => AppSettings[K];
-  set: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void;
-};
-
-const defaultHotkeys: Required<HotkeySettings> = {
-  record: 'Ctrl+Shift+S',
-  settings: 'Ctrl+Shift+O',
-  edit: 'Ctrl+Shift+E',
-  cancel: 'Ctrl+Shift+Q',
-};
-
-type RecordingMode = 'dictation' | 'edit';
 
 const logError = (context: string, error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
@@ -60,8 +39,10 @@ let isRecording = false;
 let isProcessing = false;
 let recordingMode: RecordingMode = 'dictation';
 let pendingEditText: string | null = null;
-let cancelInProgress = false;
 let tray: Tray | null = null;
+let cancelGeneration = 0;
+let overlayReady = false;
+const overlayQueue: Array<{ channel: string; payload?: unknown }> = [];
 const clipboardOps = getClipboardOperations();
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -84,111 +65,55 @@ const settingsUrl =
     `../renderer/${MAIN_WINDOW_VITE_NAME}/settings.html`,
   )}`;
 
-function createTrayIcon() {
-  const width = 16;
-  const height = 16;
-  const buffer = Buffer.alloc(width * height * 4);
+function markOverlayNotReady(clearQueue = false) {
+  overlayReady = false;
+  if (clearQueue) {
+    overlayQueue.length = 0;
+  }
+}
 
-  // Simple solid accent color to ensure visibility in the system tray.
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const idx = (y * width + x) * 4;
-      buffer[idx] = 0xf8; // blue (B)
-      buffer[idx + 1] = 0xbd; // green (G)
-      buffer[idx + 2] = 0x38; // red (R)
-      buffer[idx + 3] = 0xff; // alpha
-    }
+function flushOverlayQueue() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+
+  overlayQueue.splice(0).forEach((item) => {
+    overlayWindow?.webContents.send(item.channel, item.payload);
+  });
+}
+
+function sendOverlayMessage(channel: string, payload?: unknown) {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+
+  if (!overlayReady) {
+    overlayQueue.push({ channel, payload });
+    return;
   }
 
-  return nativeImage.createFromBitmap(buffer, { width, height });
+  overlayWindow.webContents.send(channel, payload);
 }
 
-function createTray() {
-  if (tray) return;
+function createOverlay() {
+  const preloadPath = path.join(__dirname, 'preload.js');
+  overlayWindow = createOverlayWindow(preloadPath, overlayUrl);
+  markOverlayNotReady();
 
-  const icon = createTrayIcon();
-  tray = new Tray(icon);
-  tray.setToolTip('Smart STT');
-
-  const contextMenu = Menu.buildFromTemplate([
-    { label: 'Configurações', click: showSettings },
-    { type: 'separator' },
-    {
-      label: 'Sair',
-      click: () => {
-        app.quit();
-      },
-    },
-  ]);
-
-  tray.setContextMenu(contextMenu);
-}
-
-function createOverlayWindow() {
-  overlayWindow = new BrowserWindow({
-    width: 520,
-    height: 180,
-    frame: false,
-    transparent: true,
-    resizable: false,
-    fullscreenable: false,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    show: false,
-    focusable: true,
-    useContentSize: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-    },
+  overlayWindow.webContents.on('did-finish-load', () => {
+    markOverlayNotReady();
   });
-
-  overlayWindow.loadURL(overlayUrl);
-  overlayWindow.setIgnoreMouseEvents(true);
-  positionOverlayWindow();
 
   overlayWindow.on('closed', () => {
     overlayWindow = null;
+    markOverlayNotReady(true);
   });
 }
 
-function positionOverlayWindow() {
-  if (!overlayWindow) return;
-  const { width: winW, height: winH } = overlayWindow.getBounds();
-  const { workArea } = screen.getPrimaryDisplay();
-  const x = Math.round(workArea.x + (workArea.width - winW) / 2);
-  const y = Math.round(workArea.y + workArea.height - winH - 12);
-  overlayWindow.setBounds({ x, y, width: winW, height: winH });
-}
-
-function createSettingsWindow() {
+function createSettings() {
   if (settingsWindow) {
     settingsWindow.focus();
     return;
   }
 
-  settingsWindow = new BrowserWindow({
-    width: 460,
-    height: 840,
-    useContentSize: true,
-    resizable: false,
-    minimizable: false,
-    maximizable: false,
-    skipTaskbar: true,
-    autoHideMenuBar: true,
-    fullscreenable: false,
-    alwaysOnTop: true,
-    frame: false,
-    transparent: true,
-    backgroundColor: '#00000000',
-    show: false,
-    titleBarStyle: 'hidden',
-    titleBarOverlay: false,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-    },
-  });
-
-  settingsWindow.loadURL(settingsUrl);
+  const preloadPath = path.join(__dirname, 'preload.js');
+  settingsWindow = createSettingsWindow(preloadPath, settingsUrl);
   settingsWindow.once('ready-to-show', () => settingsWindow?.show());
   settingsWindow.on('closed', () => {
     settingsWindow = null;
@@ -197,10 +122,8 @@ function createSettingsWindow() {
 
 function toggleRecording(mode: RecordingMode = 'dictation') {
   if (!overlayWindow) {
-    createOverlayWindow();
+    createOverlay();
   }
-
-  if (cancelInProgress) return;
 
   const willStart = !isRecording;
   if (willStart) {
@@ -209,14 +132,16 @@ function toggleRecording(mode: RecordingMode = 'dictation') {
 
   isRecording = !isRecording;
   if (isRecording) {
-    positionOverlayWindow();
+    if (overlayWindow) {
+      positionOverlayWindow(overlayWindow);
+    }
     overlayWindow?.showInactive();
   } else {
     pendingEditText = null;
-    // Mantém visível para mostrar estado de processamento; ocultamos via IPC após concluir.
+    // Mantem visivel para mostrar estado de processamento; ocultamos via IPC apos concluir.
     overlayWindow?.showInactive();
   }
-  overlayWindow?.webContents.send('recording-toggle', {
+  sendOverlayMessage('recording-toggle', {
     recording: isRecording,
     mode: recordingMode,
   });
@@ -224,7 +149,7 @@ function toggleRecording(mode: RecordingMode = 'dictation') {
 
 function showSettings() {
   if (!settingsWindow) {
-    createSettingsWindow();
+    createSettings();
   } else {
     settingsWindow.show();
     settingsWindow.focus();
@@ -233,7 +158,7 @@ function showSettings() {
 
 function toggleSettingsWindow() {
   if (!settingsWindow || settingsWindow.isDestroyed()) {
-    createSettingsWindow();
+    createSettings();
     return;
   }
 
@@ -245,19 +170,15 @@ function toggleSettingsWindow() {
   }
 }
 
-
 async function startEditMode() {
   const { text } = await captureSelectedOrClipboardText(clipboardOps);
 
   if (!text) {
     if (!overlayWindow) {
-      createOverlayWindow();
+      createOverlay();
     }
     overlayWindow?.showInactive();
-    overlayWindow?.webContents.send(
-      'edit-warning',
-      'Selecione ou copie um texto e tente de novo.',
-    );
+    sendOverlayMessage('edit-warning', 'Selecione ou copie um texto e tente de novo.');
     return;
   }
 
@@ -267,63 +188,126 @@ async function startEditMode() {
 
 function cancelRecording() {
   if (!isRecording && !isProcessing) return;
-  cancelInProgress = true;
+
+  cancelGeneration += 1;
   isRecording = false;
   isProcessing = false;
   pendingEditText = null;
-  overlayWindow?.webContents.send('recording-cancel', { mode: recordingMode });
-  setTimeout(() => {
-    cancelInProgress = false;
-  }, 50);
+  sendOverlayMessage('recording-cancel', { mode: recordingMode });
 }
 
-function getHotkeys(): Required<HotkeySettings> {
-  const saved = store.get('hotkeys') ?? {};
-  return {
-    record: saved.record?.trim() || defaultHotkeys.record,
-    settings: saved.settings?.trim() || defaultHotkeys.settings,
-    edit: saved.edit?.trim() || defaultHotkeys.edit,
-    cancel: saved.cancel?.trim() || defaultHotkeys.cancel,
-  };
+function createCancelChecker() {
+  const token = cancelGeneration;
+  return () => cancelGeneration !== token;
 }
 
-function registerShortcuts() {
-  unregisterShortcuts();
+function registerAppShortcuts() {
+  registerShortcuts(store, {
+    record: () => toggleRecording('dictation'),
+    edit: () => {
+      void startEditMode();
+    },
+    cancel: cancelRecording,
+    settings: toggleSettingsWindow,
+  });
+}
 
-  const { record, settings, edit, cancel } = getHotkeys();
-  const used = new Set<string>();
-  const register = (accel: string, action: () => void, label: string) => {
-    if (used.has(accel)) {
-      // eslint-disable-next-line no-console
-      console.warn(`Atalho duplicado ignorado (${label}): ${accel}`);
-      return;
+function mapProcessError(error: unknown): ProcessResponse {
+  if (error instanceof SmartSTTError) {
+    // Clipboard errors are warnings (partial success - text is in clipboard)
+    if (error.category === 'clipboard') {
+      return { ok: true, text: '', warning: error.userMessage, category: error.category };
     }
-    used.add(accel);
-    const ok = globalShortcut.register(accel, action);
-    if (!ok) {
-      // eslint-disable-next-line no-console
-      console.warn(`Não foi possível registrar atalho (${label}): ${accel}`);
+
+    return {
+      ok: false,
+      error: error.userMessage,
+      category: error.category,
+      canRetry: error.canRetry,
+    };
+  }
+
+  let message = error instanceof Error ? error.message : 'Erro desconhecido';
+  if (error instanceof APIError) {
+    const apiErr = error as APIError & {
+      response?: { data?: { error?: { message?: string } } };
+    };
+    message =
+      apiErr.response?.data?.error?.message ||
+      `${apiErr.status || 400} ${apiErr.code || ''} ${apiErr.message}`;
+  }
+
+  return { ok: false, error: message };
+}
+
+async function processAudioRequest(
+  context: 'process-audio' | 'process-edit',
+  mode: RecordingMode,
+  buffer: Buffer,
+): Promise<ProcessResponse> {
+  const shouldCancel = createCancelChecker();
+  isProcessing = true;
+
+  try {
+    const apiKey = store.get('apiKey');
+    if (!apiKey) {
+      throw createMissingApiKeyError();
     }
-  };
 
-  register(record, () => toggleRecording('dictation'), 'Gravar');
-  register(edit, () => {
-    void startEditMode();
-  }, 'Edição');
-  register(cancel, cancelRecording, 'Cancelar gravação/edição');
-  register(settings, toggleSettingsWindow, 'Configurações');
+    if (shouldCancel()) {
+      return { ok: false, cancelled: true };
+    }
+
+    const language = store.get('language') ?? 'pt';
+    const text =
+      mode === 'edit'
+        ? await handleEditAudio(
+            buffer,
+            clipboardOps,
+            apiKey,
+            language,
+            pendingEditText,
+            shouldCancel,
+          )
+        : await handleDictationAudio(
+            buffer,
+            clipboardOps,
+            apiKey,
+            language,
+            shouldCancel,
+          );
+
+    if (shouldCancel()) {
+      pendingEditText = null;
+      return { ok: false, cancelled: true };
+    }
+
+    pendingEditText = null;
+    return { ok: true, text };
+  } catch (error) {
+    pendingEditText = null;
+
+    if (shouldCancel() || isCancelledError(error)) {
+      return { ok: false, cancelled: true };
+    }
+
+    logError(context, error);
+    return mapProcessError(error);
+  } finally {
+    isProcessing = false;
+  }
 }
 
-function unregisterShortcuts() {
-  globalShortcut.unregisterAll();
-}
-
+ipcMain.on('overlay:ready', () => {
+  overlayReady = true;
+  flushOverlayQueue();
+});
 
 ipcMain.handle('settings:get', () => ({
   apiKey: store.get('apiKey') ?? '',
   deviceId: store.get('deviceId') ?? '',
   language: store.get('language') ?? 'pt',
-  hotkeys: getHotkeys(),
+  hotkeys: getHotkeys(store),
 }));
 
 ipcMain.handle(
@@ -349,7 +333,7 @@ ipcMain.handle(
       store.set('language', payload.language);
     }
     if (payload.hotkeys) {
-      const current = getHotkeys();
+      const current = getHotkeys(store);
       const next: Required<HotkeySettings> = { ...current };
 
       if (typeof payload.hotkeys.record === 'string') {
@@ -385,7 +369,7 @@ ipcMain.handle(
     }
 
     if (hotkeysChanged) {
-      registerShortcuts();
+      registerAppShortcuts();
     }
   },
 );
@@ -395,127 +379,17 @@ ipcMain.handle('hotkeys:disable', () => {
 });
 
 ipcMain.handle('hotkeys:enable', () => {
-  registerShortcuts();
+  registerAppShortcuts();
 });
 
 ipcMain.handle('process-audio', async (_event, arrayBuffer: ArrayBuffer) => {
   const buffer = Buffer.from(arrayBuffer);
-  isProcessing = true;
-  try {
-    const apiKey = store.get('apiKey');
-    if (!apiKey) {
-      throw new Error('Configure a chave da OpenAI nas configurações.');
-    }
-    if (cancelInProgress) {
-      isProcessing = false;
-      return { ok: false, error: 'Cancelado', cancelled: true };
-    }
-    const language = store.get('language') ?? 'pt';
-    const text = await handleDictationAudio(buffer, clipboardOps, apiKey, language);
-    if (cancelInProgress) {
-      isProcessing = false;
-      return { ok: false, error: 'Cancelado', cancelled: true };
-    }
-    isProcessing = false;
-    return { ok: true, text };
-  } catch (error) {
-    isProcessing = false;
-    logError('process-audio', error);
-
-    // Check if this is a SmartSTTError
-    if (error && typeof error === 'object' && 'category' in error && 'userMessage' in error) {
-      const smartError = error as { category: string; userMessage: string; canRetry: boolean };
-
-      // Clipboard errors are warnings (partial success - text is in clipboard)
-      if (smartError.category === 'clipboard') {
-        return { ok: true, text: '', warning: smartError.userMessage, category: smartError.category };
-      }
-
-      return {
-        ok: false,
-        error: smartError.userMessage,
-        category: smartError.category,
-        canRetry: smartError.canRetry
-      };
-    }
-
-    // Fallback for non-SmartSTTError
-    let message = error instanceof Error ? error.message : 'Erro desconhecido';
-    if (error instanceof APIError) {
-      const apiErr = error as APIError & {
-        response?: { data?: { error?: { message?: string } } };
-      };
-      message =
-        apiErr.response?.data?.error?.message ||
-        `${apiErr.status || 400} ${apiErr.code || ''} ${apiErr.message}`;
-    }
-    return { ok: false, error: message };
-  }
+  return processAudioRequest('process-audio', 'dictation', buffer);
 });
 
 ipcMain.handle('process-edit', async (_event, arrayBuffer: ArrayBuffer) => {
   const buffer = Buffer.from(arrayBuffer);
-  isProcessing = true;
-  try {
-    const apiKey = store.get('apiKey');
-    if (!apiKey) {
-      throw new Error('Configure a chave da OpenAI nas configurações.');
-    }
-    if (cancelInProgress) {
-      isProcessing = false;
-      pendingEditText = null;
-      return { ok: false, error: 'Cancelado', cancelled: true };
-    }
-    const language = store.get('language') ?? 'pt';
-    const text = await handleEditAudio(
-      buffer,
-      clipboardOps,
-      apiKey,
-      language,
-      pendingEditText,
-    );
-    if (cancelInProgress) {
-      isProcessing = false;
-      pendingEditText = null;
-      return { ok: false, error: 'Cancelado', cancelled: true };
-    }
-    pendingEditText = null;
-    isProcessing = false;
-    return { ok: true, text };
-  } catch (error) {
-    isProcessing = false;
-    pendingEditText = null;
-    logError('process-edit', error);
-
-    // Check if this is a SmartSTTError
-    if (error && typeof error === 'object' && 'category' in error && 'userMessage' in error) {
-      const smartError = error as { category: string; userMessage: string; canRetry: boolean };
-
-      // Clipboard errors are warnings (partial success - text is in clipboard)
-      if (smartError.category === 'clipboard') {
-        return { ok: true, text: '', warning: smartError.userMessage, category: smartError.category };
-      }
-
-      return {
-        ok: false,
-        error: smartError.userMessage,
-        category: smartError.category,
-        canRetry: smartError.canRetry
-      };
-    }
-
-    // Fallback for non-SmartSTTError
-    let message = error instanceof Error ? error.message : 'Erro desconhecido';
-    if (error instanceof APIError) {
-      const apiErr = error as APIError & {
-        response?: { data?: { error?: { message?: string } } };
-      };
-      message =
-        apiErr.response?.data?.error?.message ||
-        `${apiErr.status || 400} ${apiErr.code || ''} ${apiErr.message}`;
-    }
-    return { ok: false, error: message };
-  }
+  return processAudioRequest('process-edit', 'edit', buffer);
 });
 
 ipcMain.handle('overlay:hide', () => {
@@ -523,14 +397,14 @@ ipcMain.handle('overlay:hide', () => {
 });
 
 app.whenReady().then(() => {
-  createOverlayWindow();
-  registerShortcuts();
-  createTray();
+  createOverlay();
+  registerAppShortcuts();
+  tray = createTray(showSettings);
 });
 
 app.on('activate', () => {
   if (overlayWindow === null) {
-    createOverlayWindow();
+    createOverlay();
   }
 });
 

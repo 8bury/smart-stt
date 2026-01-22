@@ -3,6 +3,7 @@ import type { ClipboardOperations } from '../../clipboard';
 import { transcribeAudio } from '../shared/transcription';
 import { applyInstructionToText } from './text-editor';
 import {
+  CancelledError,
   createEditNoTextError,
   createEditEmptyInstructionError,
   createEditEmptyResultError,
@@ -80,7 +81,12 @@ export async function handleEditAudio(
   apiKey: string,
   language: 'pt' | 'en',
   pendingEditText: string | null,
+  shouldCancel?: () => boolean,
 ): Promise<string> {
+  if (shouldCancel?.()) {
+    throw new CancelledError();
+  }
+
   let baseText = pendingEditText;
 
   if (!baseText) {
@@ -103,6 +109,10 @@ export async function handleEditAudio(
   console.log('[handleEditAudio] start');
 
   const instruction = (await transcribeAudio(buffer, apiKey, language)).trim();
+  if (shouldCancel?.()) {
+    throw new CancelledError();
+  }
+
   if (!instruction) {
     throw createEditEmptyInstructionError();
   }
@@ -113,11 +123,19 @@ export async function handleEditAudio(
     apiKey,
     language,
   );
+  if (shouldCancel?.()) {
+    throw new CancelledError();
+  }
+
   if (!editedText) {
     throw createEditEmptyResultError();
   }
 
   clipboard.writeText(editedText);
+
+  if (shouldCancel?.()) {
+    throw new CancelledError();
+  }
 
   try {
     await withTimeout(

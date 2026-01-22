@@ -1,20 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
-
-type HotkeySettings = {
-  record?: string;
-  settings?: string;
-  edit?: string;
-  cancel?: string;
-};
-
-type SettingsPayload = {
-  apiKey?: string;
-  deviceId?: string;
-  language?: 'pt' | 'en';
-  hotkeys?: HotkeySettings;
-};
-
-type RecordingMode = 'dictation' | 'edit';
+import type { SettingsPayload } from './types/settings';
+import type { RecordingMode } from './types/recording';
 
 type RecordingTogglePayload = {
   recording: boolean;
@@ -48,6 +34,7 @@ const overlayAPI = {
     ipcRenderer.invoke('process-edit', arrayBuffer),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   hideOverlay: () => ipcRenderer.invoke('overlay:hide'),
+  ready: () => ipcRenderer.send('overlay:ready'),
 };
 
 const settingsAPI = {

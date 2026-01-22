@@ -69,6 +69,7 @@ describe('withRetry', () => {
       maxAttempts: 3,
       initialDelayMs: 1000,
     });
+    const expectation = expect(resultPromise).rejects.toThrow(networkError);
 
     // First attempt fails
     await vi.advanceTimersByTimeAsync(0);
@@ -79,7 +80,7 @@ describe('withRetry', () => {
     // Wait for second retry (2s delay due to backoff)
     await vi.advanceTimersByTimeAsync(2000);
 
-    await expect(resultPromise).rejects.toThrow(networkError);
+    await expectation;
     expect(operation).toHaveBeenCalledTimes(3);
   });
 
@@ -93,6 +94,7 @@ describe('withRetry', () => {
       backoffMultiplier: 2,
       onRetry,
     });
+    const expectation = expect(resultPromise).rejects.toThrow();
 
     // First attempt fails
     await vi.advanceTimersByTimeAsync(0);
@@ -106,7 +108,7 @@ describe('withRetry', () => {
     // Wait for third retry (4s delay)
     await vi.advanceTimersByTimeAsync(4000);
 
-    await expect(resultPromise).rejects.toThrow();
+    await expectation;
 
     // Check that onRetry was called with correct delays
     expect(onRetry).toHaveBeenCalledTimes(3);
@@ -126,6 +128,7 @@ describe('withRetry', () => {
       backoffMultiplier: 2,
       onRetry,
     });
+    const expectation = expect(resultPromise).rejects.toThrow();
 
     // First attempt fails
     await vi.advanceTimersByTimeAsync(0);
@@ -136,7 +139,7 @@ describe('withRetry', () => {
     await vi.advanceTimersByTimeAsync(3000); // Third retry (3s delay, capped)
     await vi.advanceTimersByTimeAsync(3000); // Fourth retry (3s delay, capped)
 
-    await expect(resultPromise).rejects.toThrow();
+    await expectation;
 
     expect(onRetry).toHaveBeenNthCalledWith(1, 1, expect.any(Error), 1000);
     expect(onRetry).toHaveBeenNthCalledWith(2, 2, expect.any(Error), 2000);
@@ -153,6 +156,7 @@ describe('withRetry', () => {
       initialDelayMs: 1000,
       isCancelled: () => isCancelled,
     });
+    const expectation = expect(resultPromise).rejects.toThrow('Operation cancelled by user');
 
     // First attempt fails
     await vi.advanceTimersByTimeAsync(0);
@@ -163,7 +167,7 @@ describe('withRetry', () => {
     // Wait for retry delay
     await vi.advanceTimersByTimeAsync(1000);
 
-    await expect(resultPromise).rejects.toThrow('Operation cancelled by user');
+    await expectation;
 
     // Only first attempt should have been made
     expect(operation).toHaveBeenCalledTimes(1);
