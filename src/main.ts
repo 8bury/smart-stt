@@ -9,6 +9,7 @@ import { handleEditAudio, captureSelectedOrClipboardText } from './modes/edit';
 import { createOverlayWindow, createSettingsWindow, positionOverlayWindow } from './main/windows';
 import { createTray } from './main/tray';
 import { registerShortcuts, unregisterShortcuts, getHotkeys } from './main/shortcuts';
+import { configureLinuxGlobalShortcuts } from './main/linux-shortcuts';
 import type { AppSettings, HotkeySettings, SettingsStore } from './types/settings';
 import type { RecordingMode } from './types/recording';
 import { SmartSTTError, createMissingApiKeyError, isCancelledError } from './utils/errors';
@@ -49,6 +50,8 @@ const clipboardOps = getClipboardOperations();
 if (started) {
   app.quit();
 }
+
+configureLinuxGlobalShortcuts(app);
 
 const overlayUrl =
   MAIN_WINDOW_VITE_DEV_SERVER_URL ||
